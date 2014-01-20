@@ -151,6 +151,12 @@ static int handle_option_0(Tracee *tracee, const Cli *cli UNUSED, char *value)
 	return 0;
 }
 
+static int handle_option_S(Tracee *tracee, const Cli *cli UNUSED, char *value)
+{
+	(void) initialize_extension(tracee, pstrace_callback, value);
+	return 0;
+}
+
 static int handle_option_v(Tracee *tracee, const Cli *cli UNUSED, char *value)
 {
 	return parse_integer_option(tracee, &tracee->verbose, value, "-v");

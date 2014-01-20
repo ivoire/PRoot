@@ -41,7 +41,8 @@ OBJECTS += \
 	tracee/event.o		\
 	extension/extension.o	\
 	extension/kompat/kompat.o \
-	extension/fake_id0/fake_id0.o
+	extension/fake_id0/fake_id0.o \
+	extension/pstrace/pstrace.o
 
 CARE_OBJECTS = 				\
 	cli/care.o			\

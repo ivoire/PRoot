@@ -37,6 +37,7 @@ static int handle_option_V(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_h(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_k(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_0(Tracee *tracee, const Cli *cli, char *value);
+static int handle_option_S(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_R(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_B(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_Q(Tracee *tracee, const Cli *cli, char *value);
@@ -182,6 +183,15 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 \tchanging the ownership of files, changing the root directory to\n\
 \t/, ...  Note that this option is quite limited compared to\n\
 \tfakeroot.",
+	},
+	{ .class = "Extension options",
+	  .arguments = {
+		{ .name = "-S", .separator = '\0', .value = NULL },
+		{ .name = "--strace", .separator = '\0', .value = NULL },
+		{ .name = NULL, .separator = '\0', .value = NULL } },
+	  .handler = handle_option_S,
+	  .description = "Strace syscals.",
+	  .detail = "\tStrace",
 	},
 	{ .class = "Alias options",
 	  .arguments = {
