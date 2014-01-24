@@ -45,6 +45,7 @@
 /* List of syscalls handled by this extensions.  */
 static FilteredSysnum filtered_sysnums[] = {
 	{ PR_access,		FILTER_SYSEXIT },
+	{ PR_brk,		FILTER_SYSEXIT },
 	{ PR_capset,		FILTER_SYSEXIT },
 	{ PR_chmod,		FILTER_SYSEXIT },
 	{ PR_chown,		FILTER_SYSEXIT },
@@ -122,46 +123,53 @@ static void pstrace_print(const char *psz_name, int result, const char *psz_fmt,
 }
 
 /**
- * Force current @tracee's syscall to behave as if executed by "root".
+ * Print the syscall and the values that where passed and will be returned
  * This function returns -errno if an error occured, otherwise 0.
  */
 static int handle_sysexit_end(Tracee *tracee)
 {
+  char path[PATH_MAX];
+  int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 	word_t sysnum;
 
 	sysnum = get_sysnum(tracee, ORIGINAL);
 
 	switch (sysnum) {
   case PR_access: {
-		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-		char path[PATH_MAX];
 		get_sysarg_path(tracee, path, SYSARG_1);
 		pstrace_print("access", result, "\"%s\"", path);
 		return 0;
   }
+
+	case PR_brk: {
+		void *addr = (void*) peek_reg(tracee, CURRENT, SYSARG_1);
+		if (addr == NULL)
+			pstrace_print("brk", result, "0");
+		else
+			pstrace_print("brk", result, "%p", addr);
+		return 0;
+	}
+
 	case PR_close: {
-		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		pstrace_print("close", result, "%d", fd);
 		return 0;
 	}
+
 	case PR_fstat: {
-		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		pstrace_print("fstat", result, "%d", fd);
 		return 0;
 	}
+
   case PR_open: {
-		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-		char path[PATH_MAX];
 		get_sysarg_path(tracee, path, SYSARG_1);
 		pstrace_print("open", result, "\"%s\"", path);
 		return 0;
 	}
+
 	case PR_openat: {
-		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int dirfd = peek_reg(tracee, CURRENT, SYSARG_1);
-		char path[PATH_MAX];
 		get_sysarg_path(tracee, path, SYSARG_2);
 		if(dirfd == AT_FDCWD)
 			pstrace_print("openat", result, "AT_FDCWD, \"%s\"", path);
@@ -169,13 +177,15 @@ static int handle_sysexit_end(Tracee *tracee)
 			pstrace_print("openat", result, "%d, \"%s\"", dirfd, path);
 		return 0;
 	}
+
 	case PR_read: {
-		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
 		pstrace_print("read", result, "%d, %p, %zu", fd, buf, count);
+		return 0;
 	}
+
 	default:
 		return 0;
 	}
