@@ -111,6 +111,16 @@ static FilteredSysnum filtered_sysnums[] = {
 };
 
 
+static void pstrace_print(const char *psz_name, int result, const char *psz_fmt, ...)
+{
+	va_list args;
+	va_start(args, psz_fmt);
+
+	printf("\e[1m%s\e[0m(", psz_name);
+	vprintf(psz_fmt, args);
+	printf(") = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
+}
+
 /**
  * Force current @tracee's syscall to behave as if executed by "root".
  * This function returns -errno if an error occured, otherwise 0.
@@ -120,33 +130,32 @@ static int handle_sysexit_end(Tracee *tracee)
 	word_t sysnum;
 
 	sysnum = get_sysnum(tracee, ORIGINAL);
-  VERBOSE(tracee, 1, "sysexit_end(%d)", sysnum);
 
 	switch (sysnum) {
   case PR_access: {
 		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		char path[PATH_MAX];
 		get_sysarg_path(tracee, path, SYSARG_1);
-		printf("\e[1maccess\e[0m(\"%s\") = \e[1;%dm%d\e[0m\n", path, result < 0 ? 31 : 32, result);
+		pstrace_print("access", result, "\"%s\"", path);
 		return 0;
   }
 	case PR_close: {
 		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		printf("\e[1mclose\e[0m(%d) = \e[1;%dm%d\e[0m\n", fd, result < 0 ? 31 : 32, result);
+		pstrace_print("close", result, "%d", fd);
 		return 0;
 	}
 	case PR_fstat: {
 		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		printf("\e[1mfstat\e[0m(%d) = \e[1;%dm%d\e[0m\n", fd, result < 0 ? 31 : 32, result);
+		pstrace_print("fstat", result, "%d", fd);
 		return 0;
 	}
   case PR_open: {
 		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		char path[PATH_MAX];
 		get_sysarg_path(tracee, path, SYSARG_1);
-		printf("\e[1mopen\e[0m(\"%s\") = \e[1;%dm%d\e[0m\n", path, result < 0 ? 31 : 32, result);
+		pstrace_print("open", result, "\"%s\"", path);
 		return 0;
 	}
 	case PR_openat: {
@@ -155,17 +164,17 @@ static int handle_sysexit_end(Tracee *tracee)
 		char path[PATH_MAX];
 		get_sysarg_path(tracee, path, SYSARG_2);
 		if(dirfd == AT_FDCWD)
-			printf("\e[1mopenat\e[0m(AT_FDCWD, \"%s\") = \e[1;%dm%d\e[0m\n", path, result < 0 ? 31 : 32, result);
+			pstrace_print("openat", result, "AT_FDCWD, \"%s\"", path);
 		else
-			printf("\e[1mopenat\e[0m(%d, \"%s\") = \e[1;%dm%d\e[0m\n", dirfd, path, result < 0 ? 31 : 32, result);
+			pstrace_print("openat", result, "%d, \"%s\"", dirfd, path);
 		return 0;
 	}
 	case PR_read: {
 		int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		void * buf = peek_reg(tracee, CURRENT, SYSARG_2);
+		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		printf("\e[1mread\e[0m(%d, %p, %zu) = \e[1;%dm%d\e[0m\n", fd, buf, count, result < 0 ? 31 : 32, result);
+		pstrace_print("read", result, "%d, %p, %zu", fd, buf, count);
 	}
 	default:
 		return 0;
@@ -179,6 +188,9 @@ static int handle_sysexit_end(Tracee *tracee)
  */
 int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1, intptr_t data2)
 {
+	(void)data1;
+	(void)data2;
+
 	switch (event) {
 	case INITIALIZATION:
 		extension->filtered_sysnums = filtered_sysnums;
