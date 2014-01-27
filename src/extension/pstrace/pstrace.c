@@ -108,19 +108,22 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_stat64,		FILTER_SYSEXIT },
 	{ PR_statfs,		FILTER_SYSEXIT },
 	{ PR_statfs64,		FILTER_SYSEXIT },
+	{ PR_write,		FILTER_SYSEXIT },
 	FILTERED_SYSNUM_END,
 };
 
 
-static void pstrace_print(const char *psz_name, int result, const char *psz_fmt, ...)
+static void pstrace_print(pid_t pid, const char *psz_name, int result, const char *psz_fmt, ...)
 {
 	va_list args;
 	va_start(args, psz_fmt);
 
-	printf("\e[1m%s\e[0m(", psz_name);
+	printf("\e[36m%d\e[0m \e[1m%s\e[0m(", pid, psz_name);
 	vprintf(psz_fmt, args);
 	printf(") = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
 }
+
+#define PRINT(psz_name, psz_fmt, args...) pstrace_print(tracee->pid, psz_name, result, psz_fmt, ## args)
 
 /**
  * Print the syscall and the values that where passed and will be returned
@@ -128,43 +131,63 @@ static void pstrace_print(const char *psz_name, int result, const char *psz_fmt,
  */
 static int handle_sysexit_end(Tracee *tracee)
 {
-  char path[PATH_MAX];
-  int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+	char path[PATH_MAX];
+	int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 	word_t sysnum;
 
 	sysnum = get_sysnum(tracee, ORIGINAL);
 
 	switch (sysnum) {
-  case PR_access: {
+	case PR_access: {
 		get_sysarg_path(tracee, path, SYSARG_1);
-		pstrace_print("access", result, "\"%s\"", path);
+		int mode = peek_reg(tracee, CURRENT, SYSARG_2);
+		if (mode == F_OK)
+			PRINT("access", "\"%s\", F_OK", path);
+		else {
+			bool first = true;
+			char psz_mode[19];
+			if (mode & R_OK) {
+				sprintf(psz_mode, "R_OK");
+				first = false;
+			}
+			if (mode & W_OK) {
+				sprintf(psz_mode, "%sW_OK", first ? "" : " | ");
+				first = false;
+			}
+			if (mode & X_OK) {
+				sprintf(psz_mode, "%sX_OK", first ? "" : " | ");
+				first = false;
+			}
+			PRINT("access", "\"%s\", %s", path, psz_mode);
+		}
 		return 0;
-  }
+	}
 
 	case PR_brk: {
 		void *addr = (void*) peek_reg(tracee, CURRENT, SYSARG_1);
 		if (addr == NULL)
-			pstrace_print("brk", result, "0");
+			PRINT("brk", "0");
 		else
-			pstrace_print("brk", result, "%p", addr);
+			PRINT("brk", "%p", addr);
 		return 0;
 	}
 
 	case PR_close: {
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		pstrace_print("close", result, "%d", fd);
+		PRINT("close", "%d", fd);
 		return 0;
 	}
 
 	case PR_fstat: {
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		pstrace_print("fstat", result, "%d", fd);
+		readlink_proc_pid_fd(tracee->pid, fd, path);
+		PRINT("fstat", "%d [%s]", fd, path);
 		return 0;
 	}
 
-  case PR_open: {
+	case PR_open: {
 		get_sysarg_path(tracee, path, SYSARG_1);
-		pstrace_print("open", result, "\"%s\"", path);
+		PRINT("open", "\"%s\"", path);
 		return 0;
 	}
 
@@ -172,9 +195,9 @@ static int handle_sysexit_end(Tracee *tracee)
 		int dirfd = peek_reg(tracee, CURRENT, SYSARG_1);
 		get_sysarg_path(tracee, path, SYSARG_2);
 		if(dirfd == AT_FDCWD)
-			pstrace_print("openat", result, "AT_FDCWD, \"%s\"", path);
+			PRINT("openat", "AT_FDCWD, \"%s\"", path);
 		else
-			pstrace_print("openat", result, "%d, \"%s\"", dirfd, path);
+			PRINT("openat", "%d, \"%s\"", dirfd, path);
 		return 0;
 	}
 
@@ -182,9 +205,20 @@ static int handle_sysexit_end(Tracee *tracee)
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		pstrace_print("read", result, "%d, %p, %zu", fd, buf, count);
+		readlink_proc_pid_fd(tracee->pid, fd, path);
+		PRINT("read", "%d [%s], %p, %zu", fd, path, buf, count);
 		return 0;
 	}
+
+	case PR_write: {
+		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
+		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
+		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
+		readlink_proc_pid_fd(tracee->pid, fd, path);
+		PRINT("write", "%d [%s], %p, %zu", fd, path, buf, count);
+		return 0;
+	}
+
 
 	default:
 		return 0;
