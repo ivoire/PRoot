@@ -54,6 +54,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_chown32,		FILTER_SYSEXIT },
 	{ PR_chroot,		FILTER_SYSEXIT },
 	{ PR_close,		FILTER_SYSEXIT },
+	{ PR_execve,		FILTER_SYSEXIT },
 	{ PR_exit_group,		FILTER_SYSEXIT },
 	{ PR_fchmod,		FILTER_SYSEXIT },
 	{ PR_fchmodat,		FILTER_SYSEXIT },
@@ -156,6 +157,30 @@ static void ors2string(const value_string_t available_flags[],
   }
 }
 
+static int handle_sysenter_end(Tracee *tracee)
+{
+	char path[PATH_MAX];
+	int result = 0;
+	word_t sysnum = get_sysnum(tracee, ORIGINAL);
+
+	switch (sysnum) {
+	case PR_execve: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		PRINT("execve", "%s", path);
+		return 0;
+	}
+
+	case PR_exit_group: {
+		int status = peek_reg(tracee, CURRENT, SYSARG_1);
+
+		PRINT("exit_group", "%d", status);
+		return 0;
+	}
+
+	default:
+		return 0;
+	}
+}
 
 /**
  * Print the syscall and the values that where passed and will be returned
@@ -339,6 +364,11 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 
 	case INHERIT_PARENT: /* Inheritable for sub reconfiguration ...  */
 		return 1;
+
+  case SYSCALL_ENTER_END: {
+    Tracee *tracee = TRACEE(extension);
+    return handle_sysenter_end(tracee);
+  }
 
 	case SYSCALL_EXIT_END: {
 		Tracee *tracee = TRACEE(extension);
