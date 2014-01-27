@@ -76,6 +76,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_getuid32,		FILTER_SYSEXIT },
 	{ PR_lchown,		FILTER_SYSEXIT },
 	{ PR_lchown32,		FILTER_SYSEXIT },
+	{ PR_lseek,		FILTER_SYSEXIT },
 	{ PR_lstat,		FILTER_SYSEXIT },
 	{ PR_lstat64,		FILTER_SYSEXIT },
 	{ PR_mknod,		FILTER_SYSEXIT },
@@ -182,6 +183,24 @@ static int handle_sysexit_end(Tracee *tracee)
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		readlink_proc_pid_fd(tracee->pid, fd, path);
 		PRINT("fstat", "%d [%s]", fd, path);
+		return 0;
+	}
+
+	case PR_lseek: {
+		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
+		readlink_proc_pid_fd(tracee->pid, fd, path);
+		off_t offset = peek_reg(tracee, CURRENT, SYSARG_2);
+		int whence = peek_reg(tracee, CURRENT, SYSARG_3);
+
+		const char* psz_whence = "???";
+		switch (whence) {
+		case SEEK_SET: psz_whence = "SEEK_SET"; break;
+		case SEEK_CUR: psz_whence = "SEEK_CUR"; break;
+		case SEEK_END: psz_whence = "SEEK_END"; break;
+		case SEEK_DATA: psz_whence = "SEEK_DATA"; break;
+		case SEEK_HOLE: psz_whence = "SEEK_HOLE"; break;
+		}
+		PRINT("lseek", "%d [%s], %d, %s", fd, path, offset, psz_whence);
 		return 0;
 	}
 
