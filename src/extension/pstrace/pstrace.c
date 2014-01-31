@@ -341,8 +341,8 @@ static int handle_sysexit_end(Tracee *tracee)
 		return 0;
 	}
 
-
 	default:
+		PRINT(stringify_sysnum(sysnum), "???");
 		return 0;
 	}
 }
