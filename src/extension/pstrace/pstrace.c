@@ -26,7 +26,7 @@
 #include <sys/stat.h>   /* chmod(2), stat(2) */
 #include <sys/types.h>  /* uid_t, gid_t */
 #include <unistd.h>  /* get*id(2),  */
-#include <sys/ptrace.h>    /* linux.git:c0a3a20b  */
+#include <sys/ptrace.h>	/* linux.git:c0a3a20b  */
 #include <linux/audit.h>   /* AUDIT_ARCH_*,  */
 #include <string.h>  /* memcpy(3) */
 
@@ -44,7 +44,7 @@
 
 
 typedef struct {
-    pid_t last_pid;
+	pid_t last_pid;
 } Config;
 
 /* List of syscalls handled by this extensions.  */
@@ -129,13 +129,13 @@ static void pstrace_print(Tracee *tracee, Config *config, int result, bool is_re
 	va_list args;
 	va_start(args, psz_fmt);
 
-    if (config->last_pid == tracee->pid) {
-	    printf("\e[36m  |  \e[0m");
-    } else {
-        config->last_pid = tracee->pid;
-	    printf("\e[36m%5d\e[0m", tracee->pid);
-    }
-    printf(" \e[1m%s\e[0m(", stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
+	if (config->last_pid == tracee->pid) {
+		printf("\e[36m  |  \e[0m");
+	} else {
+	    config->last_pid = tracee->pid;
+		printf("\e[36m%5d\e[0m", tracee->pid);
+	}
+	printf(" \e[1m%s\e[0m(", stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
 	vprintf(psz_fmt, args);
 	if (is_result_int)
 		printf(") = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
@@ -147,22 +147,22 @@ static void pstrace_print(Tracee *tracee, Config *config, int result, bool is_re
 #define PRINT_POINTER(psz_fmt, args...) pstrace_print(tracee, config, result, false, psz_fmt, ## args)
 
 static void ors2string(const value_string_t available_flags[],
-                       int flags, char psz_buffer[])
+	                   int flags, char psz_buffer[])
 {
   int index = 0;
   bool is_first = true;
 
   while (available_flags[index].psz != NULL) {
-    if (flags & available_flags[index].value) {
-      if (is_first) {
-        psz_buffer += sprintf(psz_buffer, "%s", available_flags[index].psz);
-        is_first = false;
-      }
-      else {
-        psz_buffer += sprintf(psz_buffer, " | %s", available_flags[index].psz);
-      }
-    }
-    index++;
+	if (flags & available_flags[index].value) {
+	  if (is_first) {
+	    psz_buffer += sprintf(psz_buffer, "%s", available_flags[index].psz);
+	    is_first = false;
+	  }
+	  else {
+	    psz_buffer += sprintf(psz_buffer, " | %s", available_flags[index].psz);
+	  }
+	}
+	index++;
   }
 }
 
@@ -211,7 +211,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 			PRINT("\"%s\", F_OK", path);
 		else {
 			char psz_mode[19];
-      ors2string(access_flags, mode, psz_mode);
+	  ors2string(access_flags, mode, psz_mode);
 			PRINT("\"%s\", %s", path, psz_mode);
 		}
 		return 0;
@@ -345,7 +345,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_statfs: {
 		get_sysarg_path(tracee, path, SYSARG_1);
 		PRINT("\"%s\"", path);
-        return 0;
+	    return 0;
 	}
 
 	case PR_write: {
@@ -375,32 +375,32 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 
 	switch (event) {
 	case INITIALIZATION:
-        extension->config = talloc_zero(extension, Config);
-        if (extension->config == NULL)
-            return -1;
+	    extension->config = talloc_zero(extension, Config);
+	    if (extension->config == NULL)
+	        return -1;
 
-        Config *config = talloc_get_type_abort(extension->config, Config);
-        config->last_pid = 0;
+	    Config *config = talloc_get_type_abort(extension->config, Config);
+	    config->last_pid = 0;
 		extension->filtered_sysnums = filtered_sysnums;
 		return 0;
 
 	case INHERIT_PARENT: /* Inheritable for sub reconfiguration ...  */
 		return 1;
 
-    case INHERIT_CHILD: {
-        Extension *parent = (Extension *)data1;
-        Config *parent_config = talloc_get_type_abort(parent->config, Config);
-        talloc_reference(NULL, parent_config);
-        extension->config = parent_config;
-        return 0;
-    }
+	case INHERIT_CHILD: {
+	    Extension *parent = (Extension *)data1;
+	    Config *parent_config = talloc_get_type_abort(parent->config, Config);
+	    talloc_reference(NULL, parent_config);
+	    extension->config = parent_config;
+	    return 0;
+	}
 
-    case SYSCALL_ENTER_END: {
-        Tracee *tracee = TRACEE(extension);
+	case SYSCALL_ENTER_END: {
+	    Tracee *tracee = TRACEE(extension);
 		Config *config = talloc_get_type_abort(extension->config, Config);
 
-        return handle_sysenter_end(tracee, config);
-    }
+	    return handle_sysenter_end(tracee, config);
+	}
 
 	case SYSCALL_EXIT_END: {
 		Tracee *tracee = TRACEE(extension);
