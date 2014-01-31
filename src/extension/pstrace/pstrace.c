@@ -43,6 +43,9 @@
 #include "arch.h"
 
 
+typedef struct {
+    pid_t last_pid;
+} Config;
 
 /* List of syscalls handled by this extensions.  */
 static FilteredSysnum filtered_sysnums[] = {
@@ -121,12 +124,18 @@ static FilteredSysnum filtered_sysnums[] = {
 };
 
 
-static void pstrace_print(Tracee *tracee, int result, bool is_result_int, const char *psz_fmt, ...)
+static void pstrace_print(Tracee *tracee, Config *config, int result, bool is_result_int, const char *psz_fmt, ...)
 {
 	va_list args;
 	va_start(args, psz_fmt);
 
-	printf("\e[36m%d\e[0m \e[1m%s\e[0m(", tracee->pid, stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
+    if (config->last_pid == tracee->pid) {
+	    printf("\e[36m  |  \e[0m");
+    } else {
+        config->last_pid = tracee->pid;
+	    printf("\e[36m%5d\e[0m", tracee->pid);
+    }
+    printf(" \e[1m%s\e[0m(", stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
 	vprintf(psz_fmt, args);
 	if (is_result_int)
 		printf(") = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
@@ -134,8 +143,8 @@ static void pstrace_print(Tracee *tracee, int result, bool is_result_int, const 
 		printf(") = %p\n", result);
 }
 
-#define PRINT(psz_fmt, args...) pstrace_print(tracee, result, true, psz_fmt, ## args)
-#define PRINT_POINTER(psz_fmt, args...) pstrace_print(tracee, result, false, psz_fmt, ## args)
+#define PRINT(psz_fmt, args...) pstrace_print(tracee, config, result, true, psz_fmt, ## args)
+#define PRINT_POINTER(psz_fmt, args...) pstrace_print(tracee, config, result, false, psz_fmt, ## args)
 
 static void ors2string(const value_string_t available_flags[],
                        int flags, char psz_buffer[])
@@ -157,7 +166,7 @@ static void ors2string(const value_string_t available_flags[],
   }
 }
 
-static int handle_sysenter_end(Tracee *tracee)
+static int handle_sysenter_end(Tracee *tracee, Config *config)
 {
 	char path[PATH_MAX];
 	int result = 0;
@@ -186,7 +195,7 @@ static int handle_sysenter_end(Tracee *tracee)
  * Print the syscall and the values that where passed and will be returned
  * This function returns -errno if an error occured, otherwise 0.
  */
-static int handle_sysexit_end(Tracee *tracee)
+static int handle_sysexit_end(Tracee *tracee, Config *config)
 {
 	char path[PATH_MAX];
 	int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
@@ -366,21 +375,38 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 
 	switch (event) {
 	case INITIALIZATION:
+        extension->config = talloc_zero(extension, Config);
+        if (extension->config == NULL)
+            return -1;
+
+        Config *config = talloc_get_type_abort(extension->config, Config);
+        config->last_pid = 0;
 		extension->filtered_sysnums = filtered_sysnums;
 		return 0;
 
 	case INHERIT_PARENT: /* Inheritable for sub reconfiguration ...  */
 		return 1;
 
-  case SYSCALL_ENTER_END: {
-    Tracee *tracee = TRACEE(extension);
-    return handle_sysenter_end(tracee);
-  }
+    case INHERIT_CHILD: {
+        Extension *parent = (Extension *)data1;
+        Config *parent_config = talloc_get_type_abort(parent->config, Config);
+        talloc_reference(NULL, parent_config);
+        extension->config = parent_config;
+        return 0;
+    }
+
+    case SYSCALL_ENTER_END: {
+        Tracee *tracee = TRACEE(extension);
+		Config *config = talloc_get_type_abort(extension->config, Config);
+
+        return handle_sysenter_end(tracee, config);
+    }
 
 	case SYSCALL_EXIT_END: {
 		Tracee *tracee = TRACEE(extension);
+		Config *config = talloc_get_type_abort(extension->config, Config);
 
-		return handle_sysexit_end(tracee);
+		return handle_sysexit_end(tracee, config);
 	}
 
 	default:
