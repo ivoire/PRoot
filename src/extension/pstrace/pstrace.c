@@ -128,7 +128,7 @@ static void pstrace_print(pid_t pid, const char *psz_name, int result, bool is_r
 
 	printf("\e[36m%d\e[0m \e[1m%s\e[0m(", pid, psz_name);
 	vprintf(psz_fmt, args);
-  if (is_result_int)
+	if (is_result_int)
 		printf(") = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
 	else
 		printf(") = %p\n", result);
@@ -304,11 +304,11 @@ static int handle_sysexit_end(Tracee *tracee)
 	}
 
 	case PR_open: {
-    //TODO: handle O_RDONLY
+		//TODO: handle O_RDONLY
 		get_sysarg_path(tracee, path, SYSARG_1);
-    char psz_mode[1024];
-    int mode = peek_reg(tracee, CURRENT, SYSARG_2);
-    ors2string(open_flags, mode, psz_mode);
+		char psz_mode[1024] = {0};
+		int mode = peek_reg(tracee, CURRENT, SYSARG_2);
+		ors2string(open_flags, mode, psz_mode);
 		PRINT("open", "\"%s\", %s", path, psz_mode);
 		return 0;
 	}
