@@ -332,6 +332,16 @@ static int handle_sysexit_end(Tracee *tracee)
 		return 0;
 	}
 
+	case PR_stat: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		PRINT("stat", "\"%s\"", path);
+	}
+
+	case PR_statfs: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		PRINT("statfs", "\"%s\"", path);
+	}
+
 	case PR_write: {
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
