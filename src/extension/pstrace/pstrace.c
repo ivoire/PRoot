@@ -57,6 +57,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_chown32,		FILTER_SYSEXIT },
 	{ PR_chroot,		FILTER_SYSEXIT },
 	{ PR_close,		FILTER_SYSEXIT },
+	{ PR_connect,		FILTER_SYSEXIT },
 	{ PR_execve,		FILTER_SYSEXIT },
 	{ PR_exit_group,		FILTER_SYSEXIT },
 	{ PR_fchmod,		FILTER_SYSEXIT },
@@ -79,6 +80,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_getresgid32,	FILTER_SYSEXIT },
 	{ PR_getresuid,		FILTER_SYSEXIT },
 	{ PR_getresuid32,	FILTER_SYSEXIT },
+	{ PR_getsockopt,	FILTER_SYSEXIT },
 	{ PR_getuid,		FILTER_SYSEXIT },
 	{ PR_getuid32,		FILTER_SYSEXIT },
 	{ PR_lchown,		FILTER_SYSEXIT },
@@ -86,6 +88,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_lseek,		FILTER_SYSEXIT },
 	{ PR_lstat,		FILTER_SYSEXIT },
 	{ PR_lstat64,		FILTER_SYSEXIT },
+	{ PR_mkdir,		FILTER_SYSEXIT },
 	{ PR_mknod,		FILTER_SYSEXIT },
 	{ PR_mmap,		FILTER_SYSEXIT },
 	{ PR_mprotect,		FILTER_SYSEXIT },
@@ -119,12 +122,13 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_stat64,		FILTER_SYSEXIT },
 	{ PR_statfs,		FILTER_SYSEXIT },
 	{ PR_statfs64,		FILTER_SYSEXIT },
+	{ PR_unlink,		FILTER_SYSEXIT },
 	{ PR_write,		FILTER_SYSEXIT },
 	FILTERED_SYSNUM_END,
 };
 
 
-static void pstrace_print(Tracee *tracee, Config *config, int result, bool is_result_int, const char *psz_fmt, ...)
+static void pstrace_print(Tracee *tracee, Config *config, const char *psz_fmt, ...)
 {
 	va_list args;
 	va_start(args, psz_fmt);
@@ -132,19 +136,14 @@ static void pstrace_print(Tracee *tracee, Config *config, int result, bool is_re
 	if (config->last_pid == tracee->pid) {
 		printf("\e[36m  |  \e[0m");
 	} else {
-	    config->last_pid = tracee->pid;
 		printf("\e[36m%5d\e[0m", tracee->pid);
 	}
 	printf(" \e[1m%s\e[0m(", stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
 	vprintf(psz_fmt, args);
-	if (is_result_int)
-		printf(") = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
-	else
-		printf(") = %p\n", result);
+	printf(")");
 }
 
-#define PRINT(psz_fmt, args...) pstrace_print(tracee, config, result, true, psz_fmt, ## args)
-#define PRINT_POINTER(psz_fmt, args...) pstrace_print(tracee, config, result, false, psz_fmt, ## args)
+#define PRINT(psz_fmt, args...) pstrace_print(tracee, config, psz_fmt, ## args)
 
 static void ors2string(const value_string_t available_flags[],
 	                   int flags, char psz_buffer[])
@@ -169,39 +168,7 @@ static void ors2string(const value_string_t available_flags[],
 static int handle_sysenter_end(Tracee *tracee, Config *config)
 {
 	char path[PATH_MAX];
-	int result = 0;
 	word_t sysnum = get_sysnum(tracee, ORIGINAL);
-
-	switch (sysnum) {
-	case PR_execve: {
-		get_sysarg_path(tracee, path, SYSARG_1);
-		PRINT("\"%s\"", path);
-		return 0;
-	}
-
-	case PR_exit_group: {
-		int status = peek_reg(tracee, CURRENT, SYSARG_1);
-
-		PRINT("%d", status);
-		return 0;
-	}
-
-	default:
-		return 0;
-	}
-}
-
-/**
- * Print the syscall and the values that where passed and will be returned
- * This function returns -errno if an error occured, otherwise 0.
- */
-static int handle_sysexit_end(Tracee *tracee, Config *config)
-{
-	char path[PATH_MAX];
-	int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-	word_t sysnum;
-
-	sysnum = get_sysnum(tracee, ORIGINAL);
 
 	switch (sysnum) {
 	case PR_access: {
@@ -211,39 +178,46 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 			PRINT("\"%s\", F_OK", path);
 		else {
 			char psz_mode[19];
-	  ors2string(access_flags, mode, psz_mode);
+			ors2string(access_flags, mode, psz_mode);
 			PRINT("\"%s\", %s", path, psz_mode);
 		}
-		return 0;
+		break;
 	}
 
 	case PR_brk: {
 		void *addr = (void*) peek_reg(tracee, CURRENT, SYSARG_1);
 		if (addr == NULL)
-			PRINT_POINTER("0");
+			PRINT("0");
 		else
-			PRINT_POINTER("%p", addr);
-		return 0;
+			PRINT("%p", addr);
+		break;
 	}
 
 	case PR_close: {
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		PRINT("%d", fd);
-		return 0;
+		readlink_proc_pid_fd(tracee->pid, fd, path);
+		PRINT("%d [%s]", fd, path);
+		break;
+	}
+
+	case PR_execve: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		PRINT("\"%s\"", path);
+		break;
 	}
 
 	case PR_exit_group: {
 		int status = peek_reg(tracee, CURRENT, SYSARG_1);
 
 		PRINT("%d", status);
-		return 0;
+		break;
 	}
 
 	case PR_fstat: {
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		readlink_proc_pid_fd(tracee->pid, fd, path);
 		PRINT("%d [%s]", fd, path);
-		return 0;
+		break;
 	}
 
 	case PR_lseek: {
@@ -261,7 +235,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		case SEEK_HOLE: psz_whence = "SEEK_HOLE"; break;
 		}
 		PRINT("%d [%s], %d, %s", fd, path, offset, psz_whence);
-		return 0;
+		break;
 	}
 
 	case PR_mmap: {
@@ -283,12 +257,12 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		off_t offset = peek_reg(tracee, CURRENT, SYSARG_6);
 
 		if (addr != NULL)
-			PRINT_POINTER("%p, %zu, %s, %s, %d [%s], 0x%x", addr, length, psz_prot, psz_flags,
-										fd, path, offset);
+			PRINT("%p, %zu, %s, %s, %d [%s], 0x%x", addr, length, psz_prot, psz_flags,
+					fd, path, offset);
 		else
-			PRINT_POINTER("NULL, %zu, %s, %s, %d [%s], 0x%x", length, psz_prot, psz_flags,
-										fd, path, offset);
-		return 0;
+			PRINT("NULL, %zu, %s, %s, %d [%s], 0x%x", length, psz_prot, psz_flags,
+					fd, path, offset);
+		break;
 	}
 
 	case PR_mprotect: {
@@ -301,7 +275,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		ors2string(mmap_prots, prot, psz_prot);
 
 		PRINT("%p, %zu, %s", addr, len, psz_prot);
-		return 0;
+		break;
 	}
 
 	case PR_munmap: {
@@ -309,7 +283,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		size_t length = peek_reg(tracee, CURRENT, SYSARG_2);
 
 		PRINT("%p, %zu", addr, length);
-		return 0;
+		break;
 	}
 
 	case PR_open: {
@@ -319,17 +293,22 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		int mode = peek_reg(tracee, CURRENT, SYSARG_2);
 		ors2string(open_flags, mode, psz_mode);
 		PRINT("\"%s\", %s", path, psz_mode);
-		return 0;
+		break;
 	}
 
 	case PR_openat: {
 		int dirfd = peek_reg(tracee, CURRENT, SYSARG_1);
 		get_sysarg_path(tracee, path, SYSARG_2);
+
+		char psz_mode[1024] = {0};
+		int mode = peek_reg(tracee, CURRENT, SYSARG_3);
+		ors2string(open_flags, mode, psz_mode);
+
 		if(dirfd == AT_FDCWD)
-			PRINT("AT_FDCWD, \"%s\"", path);
+			PRINT("AT_FDCWD, \"%s\", %s", path, psz_mode);
 		else
-			PRINT("%d, \"%s\"", dirfd, path);
-		return 0;
+			PRINT("%d, \"%s\", %s", dirfd, path, psz_mode);
+		break;
 	}
 
 	case PR_read: {
@@ -338,14 +317,14 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
 		readlink_proc_pid_fd(tracee->pid, fd, path);
 		PRINT("%d [%s], %p, %zu", fd, path, buf, count);
-		return 0;
+		break;
 	}
 
 	case PR_stat:
 	case PR_statfs: {
 		get_sysarg_path(tracee, path, SYSARG_1);
 		PRINT("\"%s\"", path);
-	    return 0;
+		break;
 	}
 
 	case PR_write: {
@@ -354,13 +333,44 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
 		readlink_proc_pid_fd(tracee->pid, fd, path);
 		PRINT("%d [%s], %p, %zu", fd, path, buf, count);
-		return 0;
+		break;
 	}
 
 	default:
-		PRINT("???");
-		return 0;
+		PRINT("??");
+		break;
 	}
+
+	config->last_pid = tracee->pid;
+	return 0;
+}
+
+/**
+ * Print the syscall and the values that where passed and will be returned
+ * This function returns -errno if an error occured, otherwise 0.
+ */
+static int handle_sysexit_end(Tracee *tracee, Config *config)
+{
+	char path[PATH_MAX];
+	int result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+	word_t sysnum = get_sysnum(tracee, ORIGINAL);
+
+	/* The pid changes iif the syscall was interupted */
+	if (config->last_pid != tracee->pid) {
+		printf(" ...\n\e[36m%5d\e[0m ... %s ...", tracee->pid, stringify_sysnum(sysnum));
+	}
+
+	/* Print the result of this syscall */
+	switch (sysnum) {
+	case PR_access:
+	case PR_close:
+	default:
+		printf(" = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
+		break;
+	}
+
+	config->last_pid = tracee->pid;
+	return 0;
 }
 
 
