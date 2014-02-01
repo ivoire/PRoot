@@ -379,8 +379,6 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 	    if (extension->config == NULL)
 	        return -1;
 
-	    Config *config = talloc_get_type_abort(extension->config, Config);
-	    config->last_pid = 0;
 		extension->filtered_sysnums = filtered_sysnums;
 		return 0;
 
