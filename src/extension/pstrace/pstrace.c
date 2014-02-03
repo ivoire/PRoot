@@ -346,6 +346,12 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	return 0;
 }
 
+
+#if !defined(MIN)
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
+
 /**
  * Print the syscall and the values that where passed and will be returned
  * This function returns -errno if an error occured, otherwise 0.
@@ -366,10 +372,29 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_access:
 	case PR_close:
 	default:
-		printf(" = \e[1;%dm%d\e[0m\n", result < 0 ? 31 : 32, result);
+		printf(" = \e[1;%dm%d\e[0m", result < 0 ? 31 : 32, result);
 		break;
 	}
 
+	/* Print return data */
+	switch (sysnum) {
+	case PR_read: {
+		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+		size_t count = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+		if (count == 0) {
+			printf("\t%pd ''", (void *)buf_addr);
+		} else {
+	        count = MIN(count, 16);
+			char buffer[count];
+			read_data(tracee, buffer, buf_addr, count);
+			printf("\t%p '%*s'", (void *)buf_addr, (int)count, buffer);
+		}
+		break;
+    }
+	}
+
+	/* Print the terminating new line */
+	printf("\n");
 	config->last_pid = tracee->pid;
 	return 0;
 }
