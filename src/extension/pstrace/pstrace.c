@@ -216,7 +216,8 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_fstat: {
 		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
 		readlink_proc_pid_fd(tracee->pid, fd, path);
-		PRINT("%d [%s]", fd, path);
+		word_t buf = peek_reg(tracee, CURRENT, SYSARG_2);
+		PRINT("%d [%s], @%p", fd, path, (void *)buf);
 		break;
 	}
 
@@ -316,7 +317,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
 		readlink_proc_pid_fd(tracee->pid, fd, path);
-		PRINT("%d [%s], %p, %zu", fd, path, buf, count);
+		PRINT("%d [%s], @%p, %zu", fd, path, buf, count);
 		break;
 	}
 
