@@ -25,6 +25,7 @@
 #include <errno.h>   /* E*, */
 #include <sys/stat.h>   /* chmod(2), stat(2) */
 #include <sys/types.h>  /* uid_t, gid_t */
+#include <sys/utsname.h>  /* utsname */
 #include <unistd.h>  /* get*id(2),  */
 #include <sys/ptrace.h>	/* linux.git:c0a3a20b  */
 #include <linux/audit.h>   /* AUDIT_ARCH_*,  */
@@ -352,6 +353,12 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_uname: {
+		void *buf = (void *)peek_reg(tracee, CURRENT, SYSARG_1);
+		PRINT("@%p", buf);
+		break;
+	}
+
 	case PR_unlink: {
 		get_sysarg_path(tracee, path, SYSARG_1);
 		PRINT("\"%s\"", path);
@@ -418,26 +425,37 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		break;
 	}
 
-	/* Print return data */
-	switch (sysnum) {
-	case PR_readlink: {
-		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
-		read_data(tracee, path, buf_addr, result);
-		/* readlink does not append a nut byte at the end */
-		path[result] = '\0';
-		printf("\t=> %s", path);
-		break;
-	}
+	/* Print return data only if it was a success*/
+	if (result >= 0) {
+		switch (sysnum) {
+		case PR_readlink: {
+			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+			read_data(tracee, path, buf_addr, result);
+			/* readlink does not append a nut byte at the end */
+			path[result] = '\0';
+			printf("\t=> %s", path);
+			break;
+		}
 
-	case PR_stat:
-	case PR_fstat:
-	case PR_lstat: {
-		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
-		struct stat stat_buf;
-		read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
-		printf("\t=> {size=%zu, mode=%d}", stat_buf.st_size, stat_buf.st_mode);
-		break;
-	}
+		case PR_stat:
+		case PR_fstat:
+		case PR_lstat: {
+			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+			struct stat stat_buf;
+			read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
+			printf("\t=> {size=%zu, mode=%d}", stat_buf.st_size, stat_buf.st_mode);
+			break;
+		}
+
+		case PR_uname: {
+			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_1);
+			struct utsname buf;
+			read_data(tracee, &buf, buf_addr, sizeof(buf));
+			printf("\t => {sysname=\"%s\", nodename=\"%s\", release=\"%s\"}", buf.sysname,
+					buf.nodename, buf.release);
+			break;
+		}
+		}
 	}
 
 	/* Print the terminating new line */
