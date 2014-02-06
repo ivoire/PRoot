@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -344,6 +344,23 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_unlink: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		PRINT("\"%s\"", path);
+		break;
+	}
+
+	case PR_getegid:
+	case PR_geteuid:
+	case PR_getgid:
+	case PR_getpid:
+	case PR_gettid:
+	case PR_getuid:
+	case PR_mknod: {
+		PRINT("");
+		break;
+	}
+
 	default:
 		PRINT("??");
 		break;
@@ -388,19 +405,15 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 
 	/* Print return data */
 	switch (sysnum) {
-	case PR_read: {
+	case PR_stat:
+	case PR_fstat:
+	case PR_lstat: {
 		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
-		size_t count = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-		if (count == 0) {
-			printf("\t%pd ''", (void *)buf_addr);
-		} else {
-	        count = MIN(count, 16);
-			char buffer[count];
-			read_data(tracee, buffer, buf_addr, count);
-			printf("\t%p '%*s'", (void *)buf_addr, (int)count, buffer);
-		}
+		struct stat stat_buf;
+		read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
+		printf("\t{size=%zu, mode=%d}", stat_buf.st_size, stat_buf.st_mode);
 		break;
-    }
+	}
 	}
 
 	/* Print the terminating new line */
