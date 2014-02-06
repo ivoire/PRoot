@@ -328,6 +328,14 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_readlink: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
+		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
+		PRINT("\"%s\", @%p, %zu", path, buf, count);
+		break;
+	}
+
 	case PR_stat:
 	case PR_statfs: {
 		get_sysarg_path(tracee, path, SYSARG_1);
@@ -405,13 +413,22 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 
 	/* Print return data */
 	switch (sysnum) {
+	case PR_readlink: {
+		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+		read_data(tracee, path, buf_addr, result);
+		/* readlink does not append a nut byte at the end */
+		path[result] = '\0';
+		printf("\t=> %s", path);
+		break;
+	}
+
 	case PR_stat:
 	case PR_fstat:
 	case PR_lstat: {
 		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
 		struct stat stat_buf;
 		read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
-		printf("\t{size=%zu, mode=%d}", stat_buf.st_size, stat_buf.st_mode);
+		printf("\t=> {size=%zu, mode=%d}", stat_buf.st_size, stat_buf.st_mode);
 		break;
 	}
 	}
