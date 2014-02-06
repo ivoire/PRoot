@@ -45,6 +45,7 @@
 
 typedef struct {
 	pid_t last_pid;
+	bool syscall_began;
 } Config;
 
 /* List of syscalls handled by this extensions.  */
@@ -169,6 +170,12 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 {
 	char path[PATH_MAX];
 	word_t sysnum = get_sysnum(tracee, ORIGINAL);
+
+	/* If the previous syscall was not finished */
+	if (config->syscall_began) {
+		printf("...\n");
+	}
+	config->syscall_began = true;
 
 	switch (sysnum) {
 	case PR_access: {
@@ -364,7 +371,10 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 
 	/* The pid changes iif the syscall was interupted */
 	if (config->last_pid != tracee->pid) {
-		printf(" ...\n\e[36m%5d\e[0m ... %s ...", tracee->pid, stringify_sysnum(sysnum));
+		if (config->syscall_began) {
+			printf("...\n");
+		}
+		printf("\e[36m%5d\e[0m ... %s ...", tracee->pid, stringify_sysnum(sysnum));
 	}
 
 	/* Print the result of this syscall */
@@ -396,6 +406,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	/* Print the terminating new line */
 	printf("\n");
 	config->last_pid = tracee->pid;
+	config->syscall_began = false;
 	return 0;
 }
 
@@ -416,6 +427,8 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 	        return -1;
 
 		extension->filtered_sysnums = filtered_sysnums;
+		Config *config = talloc_get_type_abort(extension->config, Config);
+		config->syscall_began = false;
 		return 0;
 
 	case INHERIT_PARENT: /* Inheritable for sub reconfiguration ...  */
