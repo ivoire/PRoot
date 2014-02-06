@@ -404,6 +404,13 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 
 	/* Print the result of this syscall */
 	switch (sysnum) {
+	case PR_brk:
+	case PR_mmap: {
+		word_t addr = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+		printf(" = \e[1;33m%p\e[0m", (void *)addr);
+		break;
+	}
+
 	case PR_access:
 	case PR_close:
 	default:
