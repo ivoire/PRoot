@@ -167,6 +167,9 @@ static void ors2string(const value_string_t available_flags[],
   }
 }
 
+#define GET_FD(num)  	int fd = peek_reg(tracee, CURRENT, SYSARG_ ## num);		\
+						readlink_proc_pid_fd(tracee->pid, fd, path);
+
 static int handle_sysenter_end(Tracee *tracee, Config *config)
 {
 	char path[PATH_MAX];
@@ -202,8 +205,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_close: {
-		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		readlink_proc_pid_fd(tracee->pid, fd, path);
+        GET_FD(1);
 		PRINT("%d [%s]", fd, path);
 		break;
 	}
@@ -230,8 +232,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_lseek: {
-		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		readlink_proc_pid_fd(tracee->pid, fd, path);
+        GET_FD(1);
 		off_t offset = peek_reg(tracee, CURRENT, SYSARG_2);
 		int whence = peek_reg(tracee, CURRENT, SYSARG_3);
 
@@ -321,10 +322,9 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_read: {
-		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
+        GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		readlink_proc_pid_fd(tracee->pid, fd, path);
 		PRINT("%d [%s], @%p, %zu", fd, path, buf, count);
 		break;
 	}
@@ -345,10 +345,9 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_write: {
-		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
+        GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		readlink_proc_pid_fd(tracee->pid, fd, path);
 		PRINT("%d [%s], %p, %zu", fd, path, buf, count);
 		break;
 	}
