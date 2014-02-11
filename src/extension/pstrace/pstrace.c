@@ -223,9 +223,12 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
-	case PR_fstat: {
-		int fd = peek_reg(tracee, CURRENT, SYSARG_1);
-		readlink_proc_pid_fd(tracee->pid, fd, path);
+	case PR_fstat:
+	case PR_fstat64:
+	case PR_fstatfs:
+	case PR_fstatfs64:
+	case PR_oldfstat: {
+        GET_FD(1);
 		word_t buf = peek_reg(tracee, CURRENT, SYSARG_2);
 		PRINT("%d [%s], @%p", fd, path, (void *)buf);
 		break;
@@ -337,8 +340,14 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_lstat:
+	case PR_lstat64:
+	case PR_oldlstat:
+	case PR_oldstat:
 	case PR_stat:
-	case PR_statfs: {
+	case PR_stat64:
+	case PR_statfs:
+	case PR_statfs64: {
 		get_sysarg_path(tracee, path, SYSARG_1);
 		PRINT("\"%s\"", path);
 		break;
