@@ -463,6 +463,12 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 					buf.nodename, buf.release);
 			break;
 		}
+
+		case PR_read:
+		case PR_write: {
+			printf("\t => ???");
+			break;
+		}
 		}
 	}
 
