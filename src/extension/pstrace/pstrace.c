@@ -429,7 +429,11 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_access:
 	case PR_close:
 	default:
-		printf(" = \e[1;%dm%d\e[0m", result < 0 ? 31 : 32, result);
+		if (result >= 0) {
+			printf(" = \e[1;32m%d\e[0m", result);
+		} else {
+			printf(" = \e[1;31m%d %s\e[0m", result, errno_flags[-result].flag);
+		}
 		break;
 	}
 
