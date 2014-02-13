@@ -446,7 +446,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		if (result >= 0) {
 			printf(" = \e[1;32m%d\e[0m", result);
 		} else {
-			if (result < 33) result = -33;
+//			if (result < -33) result = -33;
 			printf(" = \e[1;31m%d %s\e[0m", result, errno_flags[-result].flag);
 		}
 		break;
@@ -500,7 +500,26 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
 			struct stat stat_buf;
 			read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
-			printf("\t=> {size=%zu, mode=%d}", stat_buf.st_size, stat_buf.st_mode);
+
+			printf("\t=> ");
+			if (S_ISREG(stat_buf.st_mode)) {
+				printf("{mode=REG|%o, size=%zu}", stat_buf.st_mode & 0xfff, stat_buf.st_size);
+			} else if (S_ISDIR(stat_buf.st_mode)) {
+				printf("{mode=DIR|%o}", stat_buf.st_mode & 0xfff);
+			} else if (S_ISCHR(stat_buf.st_mode)) {
+				printf("{mode=CHR|%o}", stat_buf.st_mode & 0xfff);
+			} else if (S_ISBLK(stat_buf.st_mode)) {
+				printf("{mode=BLK|%o}", stat_buf.st_mode & 0xfff);
+			} else if (S_ISFIFO(stat_buf.st_mode)) {
+				printf("{mode=FIFO|%o}", stat_buf.st_mode & 0xfff);
+			} else if (S_ISLNK(stat_buf.st_mode)) {
+				printf("{mode=LNK|%o}", stat_buf.st_mode & 0xfff);
+			} else if (S_ISSOCK(stat_buf.st_mode)) {
+				printf("{mode=SOCK|%o}", stat_buf.st_mode & 0xfff);
+			} else {
+				assert(0);
+			}
+
 			break;
 		}
 
