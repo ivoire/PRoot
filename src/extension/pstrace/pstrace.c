@@ -446,6 +446,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		if (result >= 0) {
 			printf(" = \e[1;32m%d\e[0m", result);
 		} else {
+			if (result < 33) result = -33;
 			printf(" = \e[1;31m%d %s\e[0m", result, errno_flags[-result].flag);
 		}
 		break;
