@@ -148,20 +148,19 @@ static void pstrace_print(Tracee *tracee, Config *config, const char *psz_fmt, .
 #define PRINT(psz_fmt, args...) pstrace_print(tracee, config, psz_fmt, ## args)
 
 static void ors2string(const value_string_t available_flags[],
-	                   int flags, char psz_buffer[])
+												int flags, char psz_buffer[])
 {
   int index = 0;
   bool is_first = true;
 
   while (available_flags[index].psz != NULL) {
 	if (flags & available_flags[index].value) {
-	  if (is_first) {
-	    psz_buffer += sprintf(psz_buffer, "%s", available_flags[index].psz);
-	    is_first = false;
-	  }
-	  else {
-	    psz_buffer += sprintf(psz_buffer, " | %s", available_flags[index].psz);
-	  }
+		if (is_first) {
+			psz_buffer += sprintf(psz_buffer, "%s", available_flags[index].psz);
+			is_first = false;
+		} else {
+			psz_buffer += sprintf(psz_buffer, " | %s", available_flags[index].psz);
+		}
 	}
 	index++;
   }
@@ -206,7 +205,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_close: {
-        GET_FD(1);
+		GET_FD(1);
 		PRINT("%d [%s]", fd, fd_name);
 		break;
 	}
@@ -235,7 +234,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_fstatfs:
 	case PR_fstatfs64:
 	case PR_oldfstat: {
-        GET_FD(1);
+		GET_FD(1);
 		word_t buf = peek_reg(tracee, CURRENT, SYSARG_2);
 		PRINT("%d [%s], @%p", fd, fd_name, (void *)buf);
 		break;
@@ -249,7 +248,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_lseek: {
-        GET_FD(1);
+		GET_FD(1);
 		off_t offset = peek_reg(tracee, CURRENT, SYSARG_2);
 		int whence = peek_reg(tracee, CURRENT, SYSARG_3);
 
@@ -339,7 +338,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_read: {
-        GET_FD(1);
+		GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
 		PRINT("%d [%s], @%p, %zu", fd, fd_name, buf, count);
@@ -368,7 +367,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_write: {
-        GET_FD(1);
+		GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
 		PRINT("%d [%s], %p, %zu", fd, fd_name, buf, count);
@@ -510,9 +509,9 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 
 	switch (event) {
 	case INITIALIZATION:
-	    extension->config = talloc_zero(extension, Config);
-	    if (extension->config == NULL)
-	        return -1;
+		extension->config = talloc_zero(extension, Config);
+		if (extension->config == NULL)
+			return -1;
 
 		extension->filtered_sysnums = filtered_sysnums;
 		Config *config = talloc_get_type_abort(extension->config, Config);
@@ -523,18 +522,18 @@ int pstrace_callback(Extension *extension, ExtensionEvent event, intptr_t data1,
 		return 1;
 
 	case INHERIT_CHILD: {
-	    Extension *parent = (Extension *)data1;
-	    Config *parent_config = talloc_get_type_abort(parent->config, Config);
-	    talloc_reference(NULL, parent_config);
-	    extension->config = parent_config;
-	    return 0;
+		Extension *parent = (Extension *)data1;
+		Config *parent_config = talloc_get_type_abort(parent->config, Config);
+		talloc_reference(NULL, parent_config);
+		extension->config = parent_config;
+		return 0;
 	}
 
 	case SYSCALL_ENTER_END: {
-	    Tracee *tracee = TRACEE(extension);
+		Tracee *tracee = TRACEE(extension);
 		Config *config = talloc_get_type_abort(extension->config, Config);
 
-	    return handle_sysenter_end(tracee, config);
+		return handle_sysenter_end(tracee, config);
 	}
 
 	case SYSCALL_EXIT_END: {
