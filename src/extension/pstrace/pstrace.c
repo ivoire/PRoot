@@ -21,6 +21,7 @@
  */
 
 #include <assert.h>  /* assert(3), */
+#include <ctype.h>  /* isprint(3) */
 #include <stdint.h>  /* intptr_t, */
 #include <errno.h>   /* E*, */
 #include <sys/stat.h>   /* chmod(2), stat(2) */
@@ -454,6 +455,26 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	/* Print return data only if it was a success*/
 	if (result >= 0) {
 		switch (sysnum) {
+		case PR_read: {
+			int i;
+			/* Nothing to print here */
+			if (result <= 0)
+				break;
+
+			/* Do ot print all the buffer */
+			result = MIN(result, 42);
+			/* Get the data and print printable caracters */
+			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+			read_data(tracee, path, buf_addr, result);
+			printf("\t=> ");
+			for (i = 0; i < result; i++) {
+				if(isprint(path[i]))
+					printf("%c", path[i]);
+				else
+					printf(".");
+			}
+			break;
+		}
 		case PR_readlink: {
 			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
 			read_data(tracee, path, buf_addr, result);
@@ -492,7 +513,6 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 			break;
 		}
 
-		case PR_read:
 		case PR_write: {
 			printf("\t => ???");
 			break;
