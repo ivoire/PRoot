@@ -463,9 +463,19 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 			break;
 		}
 
-		case PR_stat:
 		case PR_fstat:
-		case PR_lstat: {
+		case PR_fstat64:
+		case PR_fstatfs:
+		case PR_fstatfs64:
+		case PR_oldfstat:
+		case PR_lstat:
+		case PR_lstat64:
+		case PR_oldlstat:
+		case PR_oldstat:
+		case PR_stat:
+		case PR_stat64:
+		case PR_statfs:
+		case PR_statfs64: {
 			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
 			struct stat stat_buf;
 			read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
