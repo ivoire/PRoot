@@ -171,9 +171,11 @@ static void ors2string(const value_string_t available_flags[],
   }
 }
 
-#define GET_FD(num)  	int fd = peek_reg(tracee, CURRENT, SYSARG_ ## num);		\
-						char fd_name[PATH_MAX];									\
-						readlink_proc_pid_fd(tracee->pid, fd, fd_name);
+#define GET_FD(num)  																												\
+	int fd_ ## num = peek_reg(tracee, CURRENT, SYSARG_ ## num);								\
+	char fd_name_ ## num[PATH_MAX];																						\
+	if (readlink_proc_pid_fd(tracee->pid, fd_ ## num, fd_name_ ## num) < 0)	\
+		fd_name_ ## num [0] = '\0';
 
 static int handle_sysenter_end(Tracee *tracee, Config *config)
 {
@@ -211,13 +213,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 
 	case PR_close: {
 		GET_FD(1);
-		PRINT("%d [%s]", fd, fd_name);
+		PRINT("%d [%s]", fd_1, fd_name_1);
 		break;
 	}
 
 	case PR_connect: {
 		GET_FD(1);
-		PRINT("%d [%s], ???", fd, fd_name);
+		PRINT("%d [%s], ???", fd_1, fd_name_1);
 		break;
 	}
 
@@ -241,14 +243,14 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_oldfstat: {
 		GET_FD(1);
 		word_t buf = peek_reg(tracee, CURRENT, SYSARG_2);
-		PRINT("%d [%s], @%p", fd, fd_name, (void *)buf);
+		PRINT("%d [%s], @%p", fd_1, fd_name_1, (void *)buf);
 		break;
 	}
 
 	case PR_inotify_add_watch: {
 		GET_FD(1);
 		get_sysarg_path(tracee, path, SYSARG_2);
-		PRINT("%d [%s], \"%s\", ???", fd, fd_name, path);
+		PRINT("%d [%s], \"%s\", ???", fd_1, fd_name_1, path);
 		break;
 	}
 
@@ -265,7 +267,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		case SEEK_DATA: psz_whence = "SEEK_DATA"; break;
 		case SEEK_HOLE: psz_whence = "SEEK_HOLE"; break;
 		}
-		PRINT("%d [%s], %d, %s", fd, fd_name, offset, psz_whence);
+		PRINT("%d [%s], %d, %s", fd_1, fd_name_1, offset, psz_whence);
 		break;
 	}
 
@@ -359,7 +361,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		PRINT("%d [%s], @%p, %zu", fd, fd_name, buf, count);
+		PRINT("%d [%s], @%p, %zu", fd_1, fd_name_1, buf, count);
 		break;
 	}
 
@@ -388,7 +390,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		PRINT("%d [%s], %p, %zu", fd, fd_name, buf, count);
+		PRINT("%d [%s], %p, %zu", fd_1, fd_name_1, buf, count);
 		break;
 	}
 
