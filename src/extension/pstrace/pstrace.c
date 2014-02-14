@@ -317,6 +317,19 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_nanosleep: {
+		word_t req_addr = peek_reg(tracee, CURRENT, SYSARG_1);
+		word_t rem_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+		struct timespec req;
+		read_data(tracee, &req, req_addr, sizeof(req));
+		if (rem_addr == 0)
+			PRINT("{%d, %d}, @NULL", req.tv_sec, req.tv_nsec);
+		else
+			PRINT("{%d, %d}, @%p", req.tv_sec, req.tv_nsec, rem_addr);
+
+		break;
+	}
+
 	case PR_open: {
 		//TODO: handle O_RDONLY
 		get_sysarg_path(tracee, path, SYSARG_1);
@@ -524,6 +537,16 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 				assert(0);
 			}
 
+			break;
+		}
+
+		case PR_nanosleep: {
+			word_t rem_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+			if (rem_addr != 0) {
+				struct timespec rem;
+				read_data(tracee, &rem, rem_addr, sizeof(rem));
+				printf("\t => {%d, %ld}", (int)rem.tv_sec, rem.tv_nsec);
+			}
 			break;
 		}
 
