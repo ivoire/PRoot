@@ -61,6 +61,9 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_chroot,		FILTER_SYSEXIT },
 	{ PR_close,		FILTER_SYSEXIT },
 	{ PR_connect,		FILTER_SYSEXIT },
+	{ PR_dup,		FILTER_SYSEXIT },
+	{ PR_dup2,		FILTER_SYSEXIT },
+	{ PR_dup3,		FILTER_SYSEXIT },
 	{ PR_execve,		FILTER_SYSEXIT },
 	{ PR_exit_group,		FILTER_SYSEXIT },
 	{ PR_fchmod,		FILTER_SYSEXIT },
@@ -220,6 +223,27 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_connect: {
 		GET_FD(1);
 		PRINT("%d [%s], ???", fd_1, fd_name_1);
+		break;
+	}
+
+	case PR_dup: {
+		GET_FD(1);
+		PRINT("%d [%s]", fd_1, fd_name_1);
+		break;
+	}
+
+	case PR_dup2: {
+		GET_FD(1);
+		GET_FD(2);
+		PRINT("%d [%s], %d [%s]", fd_1, fd_name_1, fd_2, fd_name_2);
+		break;
+	}
+
+	case PR_dup3: {
+		GET_FD(1);
+		GET_FD(2);
+		int flag = peek_reg(tracee, CURRENT, SYSARG_3);
+		PRINT("%d [%s], %d [%s], %s", fd_1, fd_name_1, fd_2, fd_name_2, flag == O_CLOEXEC ? "O_CLOEXEC":"0");
 		break;
 	}
 
