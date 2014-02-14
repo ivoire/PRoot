@@ -65,6 +65,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_dup2,		FILTER_SYSEXIT },
 	{ PR_dup3,		FILTER_SYSEXIT },
 	{ PR_execve,		FILTER_SYSEXIT },
+	{ PR_exit,		FILTER_SYSEXIT },
 	{ PR_exit_group,		FILTER_SYSEXIT },
 	{ PR_fchmod,		FILTER_SYSEXIT },
 	{ PR_fchmodat,		FILTER_SYSEXIT },
@@ -253,6 +254,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_exit:
 	case PR_exit_group: {
 		int status = peek_reg(tracee, CURRENT, SYSARG_1);
 
