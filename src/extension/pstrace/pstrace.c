@@ -79,6 +79,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_fstatat64,		FILTER_SYSEXIT },
 	{ PR_fstatfs,		FILTER_SYSEXIT },
 	{ PR_fstatfs64,		FILTER_SYSEXIT },
+	{ PR_ftruncate,		FILTER_SYSEXIT },
 	{ PR_getegid,		FILTER_SYSEXIT },
 	{ PR_getegid32,		FILTER_SYSEXIT },
 	{ PR_geteuid,		FILTER_SYSEXIT },
@@ -133,6 +134,7 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_stat64,		FILTER_SYSEXIT },
 	{ PR_statfs,		FILTER_SYSEXIT },
 	{ PR_statfs64,		FILTER_SYSEXIT },
+	{ PR_truncate,		FILTER_SYSEXIT },
 	{ PR_unlink,		FILTER_SYSEXIT },
 	{ PR_write,		FILTER_SYSEXIT },
 	FILTERED_SYSNUM_END,
@@ -273,6 +275,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_ftruncate: {
+		GET_FD(1);
+		off_t length = peek_reg(tracee, CURRENT, SYSARG_2);
+		PRINT("%d [%s], %d", fd_1, fd_name_1, length);
+		break;
+	}
+
 	case PR_inotify_add_watch: {
 		GET_FD(1);
 		get_sysarg_path(tracee, path, SYSARG_2);
@@ -409,6 +418,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_statfs64: {
 		get_sysarg_path(tracee, path, SYSARG_1);
 		PRINT("\"%s\"", path);
+		break;
+	}
+
+	case PR_truncate: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		off_t length = peek_reg(tracee, CURRENT, SYSARG_2);
+		PRINT("\"%s\", %d", path, length);
 		break;
 	}
 
