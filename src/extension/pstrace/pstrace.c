@@ -135,6 +135,8 @@ static FilteredSysnum filtered_sysnums[] = {
 	{ PR_statfs,		FILTER_SYSEXIT },
 	{ PR_statfs64,		FILTER_SYSEXIT },
 	{ PR_truncate,		FILTER_SYSEXIT },
+	{ PR_umask,		FILTER_SYSEXIT },
+	{ PR_uname,		FILTER_SYSEXIT },
 	{ PR_unlink,		FILTER_SYSEXIT },
 	{ PR_write,		FILTER_SYSEXIT },
 	FILTERED_SYSNUM_END,
@@ -463,6 +465,12 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_umask: {
+		mode_t mask = peek_reg(tracee, CURRENT, SYSARG_1);
+		PRINT("%03o", mask);
+		break;
+	}
+
 	case PR_uname: {
 		void *buf = (void *)peek_reg(tracee, CURRENT, SYSARG_1);
 		PRINT("@%p", buf);
@@ -525,6 +533,11 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_mmap: {
 		word_t addr = peek_reg(tracee, CURRENT, SYSARG_RESULT);
 		printf(" = \e[1;33m%p\e[0m", (void *)addr);
+		break;
+	}
+
+	case PR_umask: {
+		printf(" = \e[1;32m%03o\e[0m", result);
 		break;
 	}
 
