@@ -45,6 +45,26 @@
 #include "arch.h"
 
 
+/* List of colors */
+#define BEGIN_PID 	"\e[36m"
+#define END_PID 	"\e[0m"
+
+#define BEGIN_SYSNAME 	"\e[1m"
+#define END_SYSNAME 	"\e[0m"
+
+#define BEGIN_ADDR	"\e[1;33m"
+#define END_ADDR	"\e[0m"
+
+#define BEGIN_INOUT	"@["
+#define END_INOUT	"]"
+
+#define BEGIN_SUCCESS	"\e[1;32m"
+#define END_SUCCESS	"\e[0m"
+
+#define BEGIN_ERROR	"\e[1;31m"
+#define END_ERROR	"\e[0m"
+
+
 typedef struct {
 	pid_t last_pid;
 	bool syscall_began;
@@ -149,11 +169,11 @@ static void pstrace_print(Tracee *tracee, Config *config, const char *psz_fmt, .
 	va_start(args, psz_fmt);
 
 	if (config->last_pid == tracee->pid) {
-		printf("\e[36m  |  \e[0m");
+		printf(BEGIN_PID "  |  " END_PID);
 	} else {
-		printf("\e[36m%5d\e[0m", tracee->pid);
+		printf(BEGIN_PID "%5d" END_PID, tracee->pid);
 	}
-	printf(" \e[1m%s\e[0m(", stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
+	printf(" " BEGIN_SYSNAME "%s" END_SYSNAME "(", stringify_sysnum(get_sysnum(tracee, ORIGINAL)));
 	vprintf(psz_fmt, args);
 	printf(")");
 }
@@ -306,7 +326,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_oldfstat: {
 		GET_FD(1);
 		word_t buf = peek_reg(tracee, CURRENT, SYSARG_2);
-		PRINT("%d [%s], @%p", fd_1, fd_name_1, (void *)buf);
+		PRINT("%d [%s], " BEGIN_INOUT "%p" END_INOUT, fd_1, fd_name_1, (void *)buf);
 		break;
 	}
 
@@ -395,9 +415,9 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		struct timespec req;
 		read_data(tracee, &req, req_addr, sizeof(req));
 		if (rem_addr == 0)
-			PRINT("{%d, %d}, @NULL", req.tv_sec, req.tv_nsec);
+			PRINT("{%d, %d}, " BEGIN_INOUT "NULL" END_INOUT, req.tv_sec, req.tv_nsec);
 		else
-			PRINT("{%d, %d}, @%p", req.tv_sec, req.tv_nsec, rem_addr);
+			PRINT("{%d, %d}, " BEGIN_INOUT "%p" END_INOUT, req.tv_sec, req.tv_nsec, rem_addr);
 
 		break;
 	}
@@ -431,7 +451,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		GET_FD(1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		PRINT("%d [%s], @%p, %zu", fd_1, fd_name_1, buf, count);
+		PRINT("%d [%s], " BEGIN_INOUT "%p" END_INOUT ", %zu", fd_1, fd_name_1, buf, count);
 		break;
 	}
 
@@ -439,7 +459,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		get_sysarg_path(tracee, path, SYSARG_1);
 		void * buf = (void *)peek_reg(tracee, CURRENT, SYSARG_2);
 		size_t count = peek_reg(tracee, CURRENT, SYSARG_3);
-		PRINT("\"%s\", @%p, %zu", path, buf, count);
+		PRINT("\"%s\", " BEGIN_INOUT "%p" END_INOUT ", %zu", path, buf, count);
 		break;
 	}
 
@@ -479,7 +499,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 
 	case PR_uname: {
 		void *buf = (void *)peek_reg(tracee, CURRENT, SYSARG_1);
-		PRINT("@%p", buf);
+		PRINT(BEGIN_INOUT "%p" END_INOUT, buf);
 		break;
 	}
 
@@ -530,7 +550,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 		if (config->syscall_began) {
 			printf("...\n");
 		}
-		printf("\e[36m%5d\e[0m ... %s ...", tracee->pid, stringify_sysnum(sysnum));
+		printf(BEGIN_PID "%5d" END_PID " ... %s ...", tracee->pid, stringify_sysnum(sysnum));
 	}
 
 	/* Print the result of this syscall */
@@ -538,12 +558,12 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_brk:
 	case PR_mmap: {
 		word_t addr = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-		printf(" = \e[1;33m%p\e[0m", (void *)addr);
+		printf(" = " BEGIN_ADDR "%p" END_ADDR, (void *)addr);
 		break;
 	}
 
 	case PR_umask: {
-		printf(" = \e[1;32m%03o\e[0m", result);
+		printf(" = " BEGIN_SUCCESS "%03o" END_SUCCESS, result);
 		break;
 	}
 
@@ -551,10 +571,10 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	case PR_close:
 	default:
 		if (result >= 0) {
-			printf(" = \e[1;32m%d\e[0m", result);
+			printf(" = " BEGIN_SUCCESS "%d" END_SUCCESS, result);
 		} else {
 //			if (result < -33) result = -33;
-			printf(" = \e[1;31m%d %s\e[0m", result, errno_flags[-result].flag);
+			printf(" = " BEGIN_ERROR "%d %s" END_ERROR, result, errno_flags[-result].flag);
 		}
 		break;
 	}
