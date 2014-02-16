@@ -217,6 +217,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_chmod: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		mode_t mode = peek_reg(tracee, CURRENT, SYSARG_2);
+		PRINT("[%s], %06d", path, mode);
+		break;
+	}
+
 	case PR_close: {
 		GET_FD(1);
 		PRINT("%d [%s]", fd_1, fd_name_1);
@@ -261,6 +268,26 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		int status = peek_reg(tracee, CURRENT, SYSARG_1);
 
 		PRINT("%d", status);
+		break;
+	}
+
+	case PR_fchmod: {
+		GET_FD(1);
+		mode_t mode = peek_reg(tracee, CURRENT, SYSARG_2);
+		PRINT("%d [%s], %06d", fd_1, fd_name_1, mode);
+		break;
+	}
+
+	case PR_fchmodat: {
+		GET_FD(1);
+		get_sysarg_path(tracee, path, SYSARG_2);
+		mode_t mode = peek_reg(tracee, CURRENT, SYSARG_3);
+		int flags = peek_reg(tracee, CURRENT, SYSARG_4);
+		const char *psz_flags = flags == AT_SYMLINK_NOFOLLOW ? "AT_SYMLINK_NOFOLLOW" : "0";
+		if (fd_1 == AT_FDCWD)
+			PRINT("AT_FDCWD, %s, %06o, %s", path, mode, psz_flags);
+		else
+			PRINT("%d [%s], %s, %06o, %s", fd_1, fd_name_1, path, mode, psz_flags);
 		break;
 	}
 
