@@ -226,6 +226,12 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_chroot: {
+		get_sysarg_path(tracee, path, SYSARG_1);
+		PRINT("%s", path);
+		break;
+	}
+
 	case PR_close: {
 		GET_FD(1);
 		PRINT("%d [%s]", fd_1, fd_name_1);
