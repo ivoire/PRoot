@@ -330,6 +330,16 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+	case PR_newfstatat:
+	case PR_fstatat64: {
+		GET_FD(1);
+		get_sysarg_path(tracee, path, SYSARG_2);
+		word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_3);
+		if (fd_1 == AT_FDCWD)
+			PRINT("AT_FDCWD, %s, " BEGIN_INOUT "%p" END_INOUT ", ???", path, buf_addr);
+		break;
+	}
+
 	case PR_ftruncate: {
 		GET_FD(1);
 		off_t length = peek_reg(tracee, CURRENT, SYSARG_2);
@@ -613,14 +623,21 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 
 		case PR_fstat:
 		case PR_fstat64:
-		case PR_oldfstat:
+		case PR_fstatat64:
 		case PR_lstat:
 		case PR_lstat64:
+		case PR_newfstatat:
+		case PR_oldfstat:
 		case PR_oldlstat:
 		case PR_oldstat:
 		case PR_stat:
 		case PR_stat64: {
-			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
+			/* Get the buf addr from the right place */
+			word_t buf_addr;
+			if (sysnum == PR_fstatat64 || sysnum == PR_newfstatat)
+				buf_addr = peek_reg(tracee, CURRENT, SYSARG_3);
+			else
+				buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
 			struct stat stat_buf;
 			read_data(tracee, &stat_buf, buf_addr, sizeof(stat_buf));
 
