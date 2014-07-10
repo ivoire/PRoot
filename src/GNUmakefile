@@ -21,11 +21,13 @@ OBJECTS += \
 	execve/interp.o		\
 	execve/elf.o		\
 	execve/ldso.o		\
+	execve/auxv.o		\
 	path/binding.o		\
 	path/glue.o		\
 	path/canon.o		\
 	path/path.o		\
 	path/proc.o		\
+	path/temp.o		\
 	syscall/seccomp.o	\
 	syscall/syscall.o	\
 	syscall/chain.o		\
@@ -39,6 +41,9 @@ OBJECTS += \
 	tracee/mem.o		\
 	tracee/reg.o		\
 	tracee/event.o		\
+	ptrace/ptrace.o		\
+	ptrace/user.o		\
+	ptrace/wait.o		\
 	extension/extension.o	\
 	extension/kompat/kompat.o \
 	extension/fake_id0/fake_id0.o \
@@ -49,6 +54,7 @@ CARE_OBJECTS = 				\
 	cli/care-manual.o		\
 	extension/care/care.o		\
 	extension/care/final.o		\
+	extension/care/extract.o	\
 	extension/care/archive.o
 
 .DEFAULT_GOAL = proot
@@ -147,7 +153,7 @@ $(USE_BUILD_H): build.h
 	$(COMPILE)
 
 .INTERMEDIATE: manual
-manual: $(VPATH)/../doc/care-manual.txt
+manual: $(VPATH)/../doc/care/manual.txt
 	$(Q)cp $< $@
 
 cli/care-manual.o: manual cli/cli.o

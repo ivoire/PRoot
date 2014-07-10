@@ -6,7 +6,7 @@
 #include "cli/cli.h"
 
 #ifndef VERSION
-#define VERSION "2.0"
+#define VERSION "2.1"
 #endif
 
 #define CARE_MAX_SIZE 1024
@@ -31,6 +31,8 @@ static char const *default_volatile_paths[] = {
 	"/tmp/.ICE-unix",
 	"$XAUTHORITY",
 	"$ICEAUTHORITY",
+	"/var/run/dbus/system_bus_socket",
+	"/var/tmp/kdecache-$LOGNAME",
 	NULL,
 };
 
@@ -44,6 +46,9 @@ static char const *default_volatile_envars[] = {
 	"HTTPS_PROXY",
 	"FTP_PROXY",
 	"ALL_PROXY",
+	"DBUS_SESSION_BUS_ADDRESS",
+	"SESSION_MANAGER",
+	"XDG_SESSION_COOKIE",
 	NULL,
 };
 
@@ -56,6 +61,7 @@ static int handle_option_m(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_d(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_v(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_V(Tracee *tracee, const Cli *cli, char *value);
+static int handle_option_x(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_h(Tracee *tracee, const Cli *cli, char *value);
 
 static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
@@ -67,7 +73,7 @@ static Cli care_cli = {
 	.subtitle = "Comprehensive Archiver for Reproducible Execution",
 	.synopsis = "care [option] ... command",
 	.colophon = "Visit http://reproducible.io for help, bug reports, suggestions, patches, ...\n\
-Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
+Copyright (C) 2014 STMicroelectronics, licensed under GPL v2 or later.",
 	.logo = "\
   _____ ____ _____ ____\n\
  /   __/ __ |  __ \\  __|\n\
@@ -80,11 +86,11 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 	.options = {
 	{ .class = "Options",
 	  .arguments = {
-		{ .name = "-o", .separator = ' ', .value = "file" },
-		{ .name = "--output", .separator = '=', .value = "file" },
+		{ .name = "-o", .separator = ' ', .value = "path" },
+		{ .name = "--output", .separator = '=', .value = "path" },
 		{ .name = NULL, .separator = '\0', .value = NULL } },
 	  .handler = handle_option_o,
-	  .description = "Write the archive in *file*, its suffix specifies the format.",
+	  .description = "Archive in *path*, its suffix specifies the format.",
 	  .detail = NULL,
 	},
 	{ .class = "Options",
@@ -162,6 +168,15 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 	},
 	{ .class = "Options",
 	  .arguments = {
+		{ .name = "-x", .separator = ' ', .value = "file" },
+		{ .name = "--extract", .separator = '=', .value = "file" },
+		{ .name = NULL, .separator = '\0', .value = NULL } },
+	  .handler = handle_option_x,
+	  .description = "Extract content of the archive *file*, then exit.",
+	  .detail = NULL,
+	},
+	{ .class = "Options",
+	  .arguments = {
 		{ .name = "-h", .separator = '\0', .value = NULL },
 		{ .name = "--help", .separator = '\0', .value = NULL },
 		{ .name = "--usage", .separator = '\0', .value = NULL },
@@ -170,7 +185,7 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 	  .description = "Print the user manual, then exit.",
 	  .detail = NULL,
 	},
-	{0},
+	END_OF_OPTIONS,
 	},
 };
 

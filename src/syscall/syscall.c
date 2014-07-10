@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -101,7 +101,7 @@ int set_sysarg_path(Tracee *tracee, char path[PATH_MAX], Reg reg)
 
 void translate_syscall(Tracee *tracee)
 {
-	const bool is_enter_stage = (tracee->status == 0);
+	const bool is_enter_stage = IS_IN_SYSENTER(tracee);
 	int status;
 
 	assert(tracee->exe != NULL);

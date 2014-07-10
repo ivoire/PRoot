@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -41,7 +41,7 @@
  * mapping is discarded in order to emulate an empty heap.  */
 static word_t heap_offset = 0;
 
-#define PREALLOCATED_HEAP_SIZE (8 * 1024 * 1024)
+#define PREALLOCATED_HEAP_SIZE (16 * 1024 * 1024)
 
 word_t translate_brk_enter(Tracee *tracee)
 {

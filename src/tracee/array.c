@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -326,9 +326,9 @@ int fetch_array(Tracee *tracee, Array **array_, Reg reg, size_t nb_entries)
 			return -ENOMEM;
 		array->_cache = tmp;
 
-		pointer = peek_mem(tracee, address + i * sizeof_word(tracee));
+		pointer = peek_word(tracee, address + i * sizeof_word(tracee));
 		if (errno != 0)
-			return -EFAULT;
+			return -errno;
 
 		array->_cache[i].remote = pointer;
 		array->_cache[i].local = NULL;

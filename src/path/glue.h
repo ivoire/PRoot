@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -28,6 +28,7 @@
 #include "tracee/tracee.h"
 #include "path.h"
 
-extern mode_t build_glue(Tracee *tracee, const char *guest_path, char host_path[PATH_MAX], Finality is_final);
+extern mode_t build_glue(Tracee *tracee, const char *guest_path, char host_path[PATH_MAX],
+			Finality finality);
 
 #endif /* GLUE_H */

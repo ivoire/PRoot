@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -29,12 +29,15 @@
 #include <sys/queue.h>  /* LIST_*,  */
 #include <talloc.h>     /* talloc_*, */
 #include <signal.h>     /* kill(2), SIGKILL, */
-#include <sys/ptrace.h>  /* ptrace(2), PTRACE_*, */
+#include <sys/ptrace.h> /* ptrace(2), PTRACE_*, */
 #include <errno.h>      /* E*, */
 
 #include "tracee/tracee.h"
 #include "tracee/reg.h"
 #include "syscall/sysnum.h"
+#include "tracee/event.h"
+#include "ptrace/ptrace.h"
+#include "ptrace/wait.h"
 #include "extension/extension.h"
 #include "cli/notice.h"
 
@@ -43,26 +46,128 @@
 typedef LIST_HEAD(tracees, tracee) Tracees;
 static Tracees tracees;
 
+
 /**
- * Remove @tracee from the list of tracees.
+ * Remove @zombie from its parent's list of zombies.  Note: this is a
+ * talloc destructor.
  */
-static int remove_tracee(Tracee *tracee)
+static int remove_zombie(Tracee *zombie)
 {
-	LIST_REMOVE(tracee, link);
+	Tracee *ptracer;
+
+	ptracer = talloc_get_type_abort(talloc_parent(zombie), Tracee);
+	PTRACER.nb_ptracees--;
+
+	LIST_REMOVE(zombie, link);
 	return 0;
 }
 
 /**
- * Allocate a new entry for the tracee @pid.
+ * Remove @tracee from the list of tracees and update all of its
+ * children & ptracees, and its ptracer.  Note: this is a talloc
+ * destructor.
  */
-static Tracee *new_tracee(pid_t pid)
+static int remove_tracee(Tracee *tracee)
+{
+	Tracee *relative;
+	Tracee *ptracer;
+	int status;
+	int event;
+
+	LIST_REMOVE(tracee, link);
+
+	/* This could be optimize by using a dedicated list of
+	 * children and ptracees.  */
+	LIST_FOREACH(relative, &tracees, link) {
+		/* Its children are now orphan.  */
+		if (relative->parent == tracee)
+			relative->parent = NULL;
+
+		/* Its tracees are now free.  */
+		if (relative->as_ptracee.ptracer == tracee) {
+			/* Release the pending event, if any.  */
+			relative->as_ptracee.ptracer = NULL;
+
+			if (relative->as_ptracee.event4.proot.pending) {
+				event = handle_tracee_event(relative,
+							relative->as_ptracee.event4.proot.value);
+				(void) restart_tracee(relative, event);
+			}
+			else if (relative->as_ptracee.event4.ptracer.pending) {
+				event = relative->as_ptracee.event4.proot.value;
+				(void) restart_tracee(relative, event);
+			}
+
+			bzero(&relative->as_ptracee, sizeof(relative->as_ptracee));
+		}
+	}
+
+	/* Nothing else to do if it's not a ptracee.  */
+	ptracer = tracee->as_ptracee.ptracer;
+	if (ptracer == NULL)
+		return 0;
+
+	/* Sanity checks.  */
+	assert(ptracer != tracee);
+	assert(PTRACER.nb_ptracees > 0);
+
+	/* Zombify this ptracee until its ptracer is notified about
+	 * its death.  */
+	event = tracee->as_ptracee.event4.ptracer.value;
+	if (tracee->as_ptracee.event4.ptracer.pending
+	    && (WIFEXITED(event) || WIFSIGNALED(event))) {
+		Tracee *zombie;
+
+		zombie = new_dummy_tracee(ptracer);
+		if (zombie != NULL) {
+			LIST_INSERT_HEAD(&PTRACER.zombies, zombie, link);
+			talloc_set_destructor(zombie, remove_zombie);
+
+			zombie->as_ptracee.event4.ptracer.pending = true;
+			zombie->as_ptracee.event4.ptracer.value = event;
+			zombie->as_ptracee.is_zombie = true;
+			zombie->clone = tracee->clone;
+			zombie->pid = tracee->pid;
+
+			return 0;
+		}
+		/* Fallback to the common path.  */
+	}
+
+	/* Wake its ptracer if there's nothing else to wait for.  */
+	PTRACER.nb_ptracees--;
+	if (PTRACER.nb_ptracees == 0 && PTRACER.wait_pid != 0) {
+		/* Update the return value of ptracer's wait(2).  */
+		poke_reg(ptracer, SYSARG_RESULT, -ECHILD);
+
+		/* Don't forget to write its register cache back.  */
+		status = push_regs(ptracer);
+		if (status < 0) {
+			TALLOC_FREE(ptracer);
+			return 0;
+		}
+
+		PTRACER.wait_pid = 0;
+		(void) restart_tracee(ptracer, 0);
+	}
+
+	return 0;
+}
+
+/**
+ * Allocate a new entry for a dummy tracee (no pid, no destructor, not
+ * in the list of tracees, ...).  The new allocated memory is attached
+ * to the given @context.  This function returns NULL if an error
+ * occurred (ENOMEM), otherwise it returns the newly allocated
+ * structure.
+ */
+Tracee *new_dummy_tracee(TALLOC_CTX *context)
 {
 	Tracee *tracee;
 
-	tracee = talloc_zero(NULL, Tracee);
+	tracee = talloc_zero(context, Tracee);
 	if (tracee == NULL)
 		return NULL;
-	talloc_set_destructor(tracee, remove_tracee);
 
 	/* Allocate a memory collector.  */
 	tracee->ctx = talloc_new(tracee);
@@ -76,14 +181,113 @@ static Tracee *new_tracee(pid_t pid)
 	if (tracee->fs == NULL || tracee->heap == NULL)
 		goto no_mem;
 
-	tracee->pid = pid;
-	LIST_INSERT_HEAD(&tracees, tracee, link);
-
 	return tracee;
 
 no_mem:
 	TALLOC_FREE(tracee);
 	return NULL;
+}
+
+/**
+ * Allocate a new entry for the tracee @pid, then set its destructor
+ * and add it to the list of tracees.  This function returns NULL if
+ * an error occurred (ENOMEM), otherwise it returns the newly
+ * allocated structure.
+ */
+static Tracee *new_tracee(pid_t pid)
+{
+	Tracee *tracee;
+
+	tracee = new_dummy_tracee(NULL);
+	if (tracee == NULL)
+		return NULL;
+
+	talloc_set_destructor(tracee, remove_tracee);
+
+	tracee->pid = pid;
+	LIST_INSERT_HEAD(&tracees, tracee, link);
+
+	return tracee;
+}
+
+/**
+ * Return the first [stopped?] tracee with the given
+ * @pid (-1 for any) which has the given @ptracer, and which has a
+ * pending event for its ptracer if @only_with_pevent is true.  See
+ * wait(2) manual for the meaning of @wait_options.  This function
+ * returns NULL if there's no such ptracee.
+ */
+static Tracee *get_ptracee(const Tracee *ptracer, pid_t pid, bool only_stopped,
+			bool only_with_pevent, word_t wait_options)
+{
+	Tracee *ptracee;
+
+	/* Return zombies first.  */
+	LIST_FOREACH(ptracee, &PTRACER.zombies, link) {
+		/* Not the ptracee you're looking for?  */
+		if (pid != ptracee->pid && pid != -1)
+			continue;
+
+		/* Not the expected kind of cloned process?  */
+		if (!EXPECTED_WAIT_CLONE(wait_options, ptracee))
+			continue;
+
+		return ptracee;
+	}
+
+	LIST_FOREACH(ptracee, &tracees, link) {
+		/* Discard tracees that don't have this ptracer.  */
+		if (PTRACEE.ptracer != ptracer)
+			continue;
+
+		/* Not the ptracee you're looking for?  */
+		if (pid != ptracee->pid && pid != -1)
+			continue;
+
+		/* Not the expected kind of cloned process?  */
+		if (!EXPECTED_WAIT_CLONE(wait_options, ptracee))
+			continue;
+
+		/* No need to do more checks if its stopped state
+		 * doesn't matter.  Be careful when using such
+		 * maybe-running tracee.  */
+		if (!only_stopped)
+			return ptracee;
+
+		/* Is this tracee in the stopped state?  */
+		if (ptracee->running)
+			continue;
+
+		/* Has a pending event for its ptracer?  */
+		if (PTRACEE.event4.ptracer.pending || !only_with_pevent)
+			return ptracee;
+
+		/* No need to go further if the specific tracee isn't
+		 * in the expected state?  */
+		if (pid == ptracee->pid)
+			return NULL;
+	}
+
+	return NULL;
+}
+
+/**
+ * Wrapper for get_ptracee(), this ensures only a stopped tracee is
+ * returned (or NULL).
+ */
+Tracee *get_stopped_ptracee(const Tracee *ptracer, pid_t pid,
+			bool only_with_pevent, word_t wait_options)
+{
+	return get_ptracee(ptracer, pid, true, only_with_pevent, wait_options);
+}
+
+/**
+ * Wrapper for get_ptracee(), this ensures no running tracee is
+ * returned.
+ */
+bool has_ptracees(const Tracee *ptracer, pid_t pid, word_t wait_options)
+{
+	return (get_ptracee(ptracer, pid, false, false, wait_options) != NULL);
 }
 
 /**
@@ -101,7 +305,7 @@ Tracee *get_tracee(const Tracee *current_tracee, pid_t pid, bool create)
 	if (current_tracee != NULL && current_tracee->pid == pid)
 		return (Tracee *)current_tracee;
 
-	LIST_FOREACH(tracee, &tracees, link)
+	LIST_FOREACH(tracee, &tracees, link) {
 		if (tracee->pid == pid) {
 			/* Flush then allocate a new memory collector.  */
 			TALLOC_FREE(tracee->ctx);
@@ -109,6 +313,7 @@ Tracee *get_tracee(const Tracee *current_tracee, pid_t pid, bool create)
 
 			return tracee;
 		}
+	}
 
 	return (create ? new_tracee(pid) : NULL);
 }
@@ -120,6 +325,7 @@ Tracee *get_tracee(const Tracee *current_tracee, pid_t pid, bool create)
  */
 int new_child(Tracee *parent, word_t clone_flags)
 {
+	int ptrace_options;
 	unsigned long pid;
 	Tracee *child;
 	int status;
@@ -140,7 +346,7 @@ int new_child(Tracee *parent, word_t clone_flags)
 
 	/* Get the pid of the parent's new child.  */
 	status = ptrace(PTRACE_GETEVENTMSG, parent->pid, NULL, &pid);
-	if (status < 0) {
+	if (status < 0 || pid == 0) {
 		notice(parent, WARNING, SYSTEM, "ptrace(GETEVENTMSG)");
 		return status;
 	}
@@ -160,7 +366,9 @@ int new_child(Tracee *parent, word_t clone_flags)
 	    && child->fs->bindings.guest == NULL
 	    && child->fs->bindings.host == NULL
 	    && child->qemu == NULL
-	    && child->glue == NULL);
+	    && child->glue == NULL
+	    && child->parent == NULL
+	    && child->as_ptracee.ptracer == NULL);
 
 	child->verbose = parent->verbose;
 	child->seccomp = parent->seccomp;
@@ -186,6 +394,46 @@ int new_child(Tracee *parent, word_t clone_flags)
 		: talloc_memdup(child, parent->heap, sizeof(Heap));
 	if (child->heap == NULL)
 		return -ENOMEM;
+
+	/* If CLONE_PARENT is set, then the parent of the new child
+	 * (as returned by getppid(2)) will be the same as that of the
+	 * calling process.
+	 *
+	 * If CLONE_PARENT is not set, then (as with fork(2)) the
+	 * child's parent is the calling process.
+	 *
+	 * -- clone(2) man-page
+	 */
+	child->clone = ((clone_flags & CLONE_PARENT) != 0);
+	if (child->clone)
+		child->parent = parent->parent;
+	else
+		child->parent = parent;
+
+	/* Depending on how the new process is created, it may be
+	 * automatically traced by the parent's tracer.  */
+	ptrace_options = ( clone_flags == 0			? PTRACE_O_TRACEFORK
+			: (clone_flags & 0xFF) == SIGCHLD	? PTRACE_O_TRACEFORK
+			: (clone_flags & CLONE_VFORK) != 0	? PTRACE_O_TRACEVFORK
+			: 					  PTRACE_O_TRACECLONE);
+	if (parent->as_ptracee.ptracer != NULL
+	    && (   (ptrace_options & parent->as_ptracee.options) != 0
+		|| (clone_flags & CLONE_PTRACE) != 0)) {
+		Tracee *ptracer = parent->as_ptracee.ptracer;
+		child->as_ptracee.ptracer = ptracer;
+		PTRACER.nb_ptracees++;
+
+		/* All these flags are inheritable, no matter why this
+		 * child is being traced.  */
+		child->as_ptracee.options |= (parent->as_ptracee.options
+					      & ( PTRACE_O_TRACECLONE
+						| PTRACE_O_TRACEEXEC
+						| PTRACE_O_TRACEEXIT
+						| PTRACE_O_TRACEFORK
+						| PTRACE_O_TRACESYSGOOD
+						| PTRACE_O_TRACEVFORK
+						| PTRACE_O_TRACEVFORKDONE));
+	}
 
 	/* If CLONE_FS is set, the parent and the child process share
 	 * the same file system information.  This includes the root
@@ -245,15 +493,52 @@ int new_child(Tracee *parent, word_t clone_flags)
 	/* Restart the child tracee if it was already alive but
 	 * stopped until that moment.  */
 	if (child->sigstop == SIGSTOP_PENDING) {
-		int status;
+		bool keep_stopped = false;
 
 		child->sigstop = SIGSTOP_ALLOWED;
-		status = ptrace(PTRACE_SYSCALL, child->pid, NULL, 0);
-		if (status < 0)
-			TALLOC_FREE(child);
+
+		/* Notify its ptracer if it is ready to be traced.  */
+		if (child->as_ptracee.ptracer != NULL) {
+			/* Sanity check.  */
+			assert(!child->as_ptracee.tracing_started);
+
+			keep_stopped = handle_ptracee_event(child, __W_STOPCODE(SIGSTOP));
+
+			/* Note that this event was already handled by
+			 * PRoot since child->as_ptracee.ptracer was
+			 * NULL up to now.  */
+			child->as_ptracee.event4.proot.pending = false;
+			child->as_ptracee.event4.proot.value   = 0;
+		}
+
+		if (!keep_stopped)
+			(void) restart_tracee(child, 0);
 	}
 
 	return 0;
+}
+
+/**
+ * Helper for swap_config().
+ */
+static void reparent_config(Tracee *new_parent, Tracee *old_parent)
+{
+	new_parent->verbose = old_parent->verbose;
+	new_parent->qemu_pie_workaround = old_parent->qemu_pie_workaround;
+
+#define REPARENT(field) do {							\
+		talloc_reparent(old_parent, new_parent, old_parent->field);	\
+		new_parent->field = old_parent->field;				\
+	} while(0);
+
+	REPARENT(fs);
+	REPARENT(exe);
+	REPARENT(cmdline);
+	REPARENT(qemu);
+	REPARENT(glue);
+	REPARENT(extensions);
+
+#undef REPARENT
 }
 
 /**
@@ -267,32 +552,11 @@ int swap_config(Tracee *tracee1, Tracee *tracee2)
 	if (tmp == NULL)
 		return -ENOMEM;
 
-#if defined(TALLOC_VERSION_MAJOR) && TALLOC_VERSION_MAJOR >= 2
-	void reparent_config(Tracee *new_parent, Tracee *old_parent) {
-		new_parent->verbose = old_parent->verbose;
-		new_parent->qemu_pie_workaround = old_parent->qemu_pie_workaround;
-
-		#define REPARENT(field) do {						\
-			talloc_reparent(old_parent, new_parent, old_parent->field);	\
-			new_parent->field = old_parent->field;				\
-		} while(0);
-
-		REPARENT(fs);
-		REPARENT(exe);
-		REPARENT(cmdline);
-		REPARENT(qemu);
-		REPARENT(glue);
-		REPARENT(extensions);
-	}
-
 	reparent_config(tmp,     tracee1);
 	reparent_config(tracee1, tracee2);
 	reparent_config(tracee2, tmp);
 
 	return 0;
-#else
-	return -ENOSYS;
-#endif
 }
 
 /* Send the KILL signal to all tracees.  */

@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -102,7 +102,7 @@ static void generate_output_name(const Tracee *tracee, Care *care)
 		return;
 	}
 
-	care->output = talloc_asprintf(care, "care-%02d%02d%02d%02d%02d%02d.cpio",
+	care->output = talloc_asprintf(care, "care-%02d%02d%02d%02d%02d%02d.bin",
 					splitted_time->tm_year - 100, splitted_time->tm_mon + 1,
 					splitted_time->tm_mday, splitted_time->tm_hour,
 					splitted_time->tm_min, splitted_time->tm_sec);
@@ -126,6 +126,7 @@ static int generate_care(Extension *extension, const Options *options)
 	Item *item2;
 	Item *item;
 	Care *care;
+	int i;
 
 	tracee = TRACEE(extension);
 
@@ -134,7 +135,25 @@ static int generate_care(Extension *extension, const Options *options)
 		return -1;
 	care = extension->config;
 
-	care->command = options->command;
+	/* Copy the command-line to be sure it will be still available
+	 * during finalization.  */
+	for (i = 0; options->command[i] != NULL; i++)
+		;
+
+	care->command = talloc_zero_array(care, char *, i + 1);
+	if (care->command == NULL) {
+		notice(tracee, ERROR, INTERNAL, "can't allocate care command");
+		return -ENOMEM;
+	}
+
+	for (i = 0; options->command[i] != NULL; i++) {
+		care->command[i] = talloc_strdup(care, options->command[i]);
+		if (care->command[i] == NULL) {
+			notice(tracee, ERROR, INTERNAL, "can't allocate care command[i]");
+			return -ENOMEM;
+		}
+	}
+
 	care->ipc_are_volatile = !options->ignore_default_config;
 
 	if (options->output != NULL)
@@ -157,10 +176,10 @@ static int generate_care(Extension *extension, const Options *options)
 		return -1;
 
 	cursor = strrchr(care->output, '/');
-	if (cursor != NULL)
-		cursor++;
-	else
+	if (cursor == NULL || strlen(cursor) == 1)
 		cursor = care->output;
+	else
+		cursor++;
 
 	care->prefix = talloc_strndup(care, cursor, strlen(cursor) - suffix_length);
 	if (care->prefix == NULL) {
@@ -180,6 +199,25 @@ static int generate_care(Extension *extension, const Options *options)
 			status = canonicalize(tracee, (const char *) item->load, false, path, 0);
 			if (status < 0)
 				continue;
+
+			/* Sanity check.  */
+			if (strcmp(path, "/") == 0) {
+				const char *string;
+				const char *name;
+
+				name = talloc_get_name(item);
+				string = name == NULL || name[0] != '$'
+					? talloc_asprintf(tracee->ctx, "'%s'",
+							(const char *) item->load)
+					: talloc_asprintf(tracee->ctx, "'%s' (%s)",
+							(const char *) item->load, name);
+
+				notice(tracee, WARNING, USER,
+					"path %s was declared volatile but it leads to '/', "
+					"as a consequence it will *not* be considered volatile.",
+					string);
+				continue;
+			}
 
 			item2 = queue_item(care, &care->volatile_paths, path);
 			if (item2 == NULL)
@@ -367,11 +405,19 @@ static void handle_host_path(Extension *extension, const char *path)
 	}
 
 	/* Format the location within the archive.  */
+	location = NULL;
 	assert(path[0] == '/');
-	location = talloc_asprintf(tracee->ctx, "%s/rootfs%s", care->prefix, path);
-	if (location == NULL) {
-		notice(tracee, WARNING, INTERNAL, "can't allocate location for '%s'", path);
-		return;
+	if (strlen(path) < PATH_MAX) {
+		char path2[PATH_MAX];
+
+		/* Convert this path back to the guest point-of-view,
+		 * in case it lies in an asymmetric bindings
+		 * (concealed path or PRoot sub-reconfiguration).  */
+		strcpy(path2, path);
+		status = detranslate_path(tracee, path2, NULL);
+		if (status >= 0)
+			location = talloc_asprintf(tracee->ctx, "%s/rootfs%s", care->prefix, path2);
+		/* On error "location" is NULL, so it's OK.  */
 	}
 
 	status = archive(tracee, care->archive, path, location, &statl);

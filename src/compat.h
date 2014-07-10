@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -56,6 +56,21 @@
 #    endif
 #    ifndef PTRACE_GETEVENTMSG
 #        define PTRACE_GETEVENTMSG	0x4201
+#    endif
+#    ifndef PTRACE_GETREGSET
+#        define PTRACE_GETREGSET	0x4204
+#    endif
+#    ifndef PTRACE_SETREGSET
+#        define PTRACE_SETREGSET	0x4205
+#    endif
+#    ifndef PTRACE_SEIZE
+#        define PTRACE_SEIZE		0x4206
+#    endif
+#    ifndef PTRACE_INTERRUPT
+#        define PTRACE_INTERRUPT	0x4207
+#    endif
+#    ifndef PTRACE_LISTEN
+#        define PTRACE_LISTEN		0x4208
 #    endif
 #    ifndef PTRACE_O_TRACESYSGOOD
 #        define PTRACE_O_TRACESYSGOOD	0x00000001
@@ -113,6 +128,18 @@
 #    endif
 #    ifndef PTRACE_SET_SYSCALL
 #        define PTRACE_SET_SYSCALL	23
+#    endif
+#    ifndef PTRACE_GET_THREAD_AREA
+#        define PTRACE_GET_THREAD_AREA	25
+#    endif
+#    ifndef PTRACE_SET_THREAD_AREA
+#        define PTRACE_SET_THREAD_AREA	26
+#    endif
+#    ifndef PTRACE_GETVFPREGS
+#        define PTRACE_GETVFPREGS	27
+#    endif
+#    ifndef PTRACE_SINGLEBLOCK
+#        define PTRACE_SINGLEBLOCK	33
 #    endif
 #    ifndef ADDR_NO_RANDOMIZE
 #        define ADDR_NO_RANDOMIZE	0x0040000

@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -46,6 +46,9 @@ typedef enum {
 			notice(tracee, INFO, INTERNAL, (message), ## args); \
 	} while (0)
 
-extern void notice(const Tracee *tracee, Severity severity, Origin origin, const char *message, ...) FORMAT(gnu_printf, 4, 5);
+extern void notice(const Tracee *tracee, Severity severity, Origin origin, const char *message, ...) FORMAT(printf, 4, 5);
+
+extern int global_verbose_level;
+extern const char *global_tool_name;
 
 #endif /* NOTICE_H */

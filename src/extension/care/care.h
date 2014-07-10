@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -56,7 +56,7 @@ typedef struct {
 	struct Entry *entries;
 	struct Entry *dentries;
 
-	char *const *command;
+	char **command;
 	List *volatile_paths;
 	List *volatile_envars;
 	List *concealed_accesses;

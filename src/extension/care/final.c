@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -20,18 +20,22 @@
  * 02110-1301 USA.
  */
 
-#include <unistd.h>       /* lstat(2), readlink(2), getpid(2), */
+#include <unistd.h>       /* lstat(2), readlink(2), getpid(2), wirte(2), lseek(2), */
 #include <sys/stat.h>     /* struct stat, fchmod(2), */
 #include <linux/limits.h> /* PATH_MAX, */
 #include <sys/utsname.h>  /* uname(2), */
-#include <stdio.h>        /* fprintf(3), fdopen(3), fclose(3), P_tmpdir, */
-#include <stdlib.h>       /* mkstemp(3), */
+#include <stdio.h>        /* fprintf(3), fclose(3), */
 #include <errno.h>        /* errno, ENAMETOOLONG, */
+#include <string.h>       /* strcpy(3), */
+#include <endian.h>       /* htobe64(3), */
+#include <assert.h>       /* assert(3), */
 
 #include "extension/care/final.h"
 #include "extension/care/care.h"
+#include "extension/care/extract.h"
 #include "execve/ldso.h"
 #include "path/path.h"
+#include "path/temp.h"
 #include "cli/notice.h"
 
 /**
@@ -78,20 +82,20 @@ static int archive_close_file(const Care *care, FILE *file, const char *name)
 
 	status = fstat(fd, &statl);
 	if (status < 0) {
-		notice(NULL, WARNING, SYSTEM, "can't get '%s' status", name);
+		notice(NULL, ERROR, SYSTEM, "can't get '%s' status", name);
 		goto end;
 	}
 
 	location = talloc_asprintf(care, "%s/%s", care->prefix, name);
 	if (location == NULL) {
-		notice(NULL, WARNING, INTERNAL, "can't allocate location for '%s'", name);
+		notice(NULL, ERROR, INTERNAL, "can't allocate location for '%s'", name);
 		status = -1;
 		goto end;
 	}
 
 	status = readlink_proc_pid_fd(getpid(), fd, path);
 	if (status < 0) {
-		notice(NULL, WARNING, INTERNAL, "can't readlink(/proc/%d/fd/%d)", getpid(), fd);
+		notice(NULL, ERROR, INTERNAL, "can't readlink(/proc/%d/fd/%d)", getpid(), fd);
 		goto end;
 	}
 
@@ -101,44 +105,11 @@ end:
 	return status;
 }
 
-/**
- * Create a temporary file and return its stream.  Note: tmpfile(3)
- * can't be used here since it unlinks the name of the temporary file,
- * this latter is required in archive_close_file().
- */
-static FILE *temp_file(const Care *care)
-{
-	char *temp;
-	FILE *file;
-	int fd;
-
-	temp = talloc_asprintf(care, "%s/care-%d-XXXXXX", P_tmpdir, getpid());
-	if (temp == NULL) {
-		notice(NULL, WARNING, INTERNAL, "can't allocate temporary file name");
-		return NULL;
-	}
-
-	fd = mkstemp(temp);
-	if (fd < 0) {
-		notice(NULL, WARNING, SYSTEM, "can't create temporary file");
-		return NULL;
-	}
-
-	file = fdopen(fd, "w");
-	if (file == NULL) {
-		close(fd);
-		notice(NULL, WARNING, INTERNAL, "can't open temporary file");
-		return NULL;
-	}
-
-	return file;
-}
-
 /* Helpers for archive_* functions.  */
 #define N(format, ...)							\
 	do {								\
 		if (fprintf(file, format "\n", ##__VA_ARGS__) < 0) {	\
-			notice(NULL, WARNING, INTERNAL, "can't write file"); \
+			notice(NULL, ERROR, INTERNAL, "can't write file"); \
 			(void) fclose(file);				\
 			return -1;					\
 		}							\
@@ -159,9 +130,9 @@ static int archive_re_execute_sh(const Care *care)
 	int status;
 	int i;
 
-	file = temp_file(care);
+	file = open_temp_file(NULL, "care");
 	if (file == NULL) {
-		notice(NULL, WARNING, INTERNAL, "can't create temporary file for 're-execute.sh'");
+		notice(NULL, ERROR, INTERNAL, "can't create temporary file for 're-execute.sh'");
 		return -1;
 	}
 
@@ -266,7 +237,7 @@ static int archive_concealed_accesses_txt(const Care *care)
 	if (care->concealed_accesses == NULL)
 		return 0;
 
-	file = temp_file(care);
+	file = open_temp_file(NULL, "care");
 	if (file == NULL) {
 		notice(NULL, WARNING, INTERNAL,
 			"can't create temporary file for 'concealed-accesses.txt'");
@@ -288,7 +259,7 @@ static int archive_readme_txt(const Care *care)
 {
 	FILE *file;
 
-	file = temp_file(care);
+	file = open_temp_file(NULL, "care");
 	if (file == NULL) {
 		notice(NULL, WARNING, INTERNAL, "can't create temporary file for 'README.txt'");
 		return -1;
@@ -350,20 +321,20 @@ static int archive_myself(const Care *care)
 		errno = ENAMETOOLONG;
 	}
 	if (status < 0) {
-		notice(NULL, WARNING, SYSTEM, "can't readlink '/proc/self/exe'");
+		notice(NULL, ERROR, SYSTEM, "can't readlink '/proc/self/exe'");
 		return status;
 	}
 	path[status] = '\0';
 
 	status = lstat(path, &statl);
 	if (status < 0) {
-		notice(NULL, WARNING, INTERNAL, "can't lstat '%s'", path);
+		notice(NULL, ERROR, INTERNAL, "can't lstat '%s'", path);
 		return status;
 	}
 
 	location = talloc_asprintf(care, "%s/proot", care->prefix);
 	if (location == NULL) {
-		notice(NULL, WARNING, INTERNAL, "can't allocate location for 'proot'");
+		notice(NULL, ERROR, INTERNAL, "can't allocate location for 'proot'");
 		return -1;
 	}
 
@@ -376,8 +347,8 @@ static int archive_myself(const Care *care)
  */
 int finalize_care(Care *care)
 {
+	char *extractor;
 	int status;
-	char *hint;
 
 	/* Generate & archive the "re-execute.sh" script. */
 	status = archive_re_execute_sh(care);
@@ -401,17 +372,40 @@ int finalize_care(Care *care)
 
 	finalize_archive(care->archive);
 
+	/* Append self-extract information if needed.  */
+	if (care->archive->fd >= 0 && care->archive->offset > 0) {
+		AutoExtractInfo info;
+		off_t position;
+
+		strcpy(info.signature, AUTOEXTRACT_SIGNATURE);
+
+		/* Compute the size of the archive.  */
+		position = lseek(care->archive->fd, 0, SEEK_CUR);
+		assert(position > care->archive->offset);
+		info.size = htobe64(position - care->archive->offset);
+
+		status = write(care->archive->fd, &info, sizeof(info));
+		if (status != sizeof(info))
+			notice(NULL, WARNING, SYSTEM, "can't write self-extract information");
+
+		(void) close(care->archive->fd);
+		care->archive->fd = -1;
+
+		extractor = talloc_asprintf(care, "`./%1$s` or `care -x %1$s`", care->output);
+	}
+	else if (care->output[strlen(care->output) - 1] != '/')
+		extractor = talloc_asprintf(care, "`care -x %s`", care->output);
+	else
+		extractor = NULL;
+
 	notice(NULL, INFO, USER,
 		"----------------------------------------------------------------------");
 	notice(NULL, INFO, USER, "Hints:");
 	notice(NULL, INFO, USER,
-		"\t- if the execution didn't go as expected: search for \"conceal\" in `care -h`");
+		"  - search for \"conceal\" in `care -h` if the execution didn't go as expected.");
 
-	hint = talloc_asprintf(care, "\t- use the following command to extract the archive: %s", care->archive->howto_extract);
-	if (hint == NULL)
-		notice(NULL, INFO, USER, "CARE output: %s", care->output);
-	else
-		notice(NULL, INFO, USER, hint, care->output);
+	if (extractor != NULL)
+		notice(NULL, INFO, USER, "  - run %s to extract the output archive.", extractor);
 
 	return 0;
 }

@@ -3,11 +3,13 @@
 #ifndef PROOT_CLI_H
 #define PROOT_CLI_H
 
+#include "cli/cli.h"
+
 #ifndef VERSION
-#define VERSION "3.2.2"
+#define VERSION "4.0.0"
 #endif
 
-static char *recommended_bindings[] = {
+static const char *recommended_bindings[] = {
 	"/etc/host.conf",
 	"/etc/hosts",
 	"/etc/hosts.equiv",
@@ -28,6 +30,20 @@ static char *recommended_bindings[] = {
 	NULL,
 };
 
+static const char *recommended_su_bindings[] = {
+	"/etc/host.conf",
+	"/etc/hosts",
+	"/etc/nsswitch.conf",
+	"/etc/resolv.conf",
+	"/dev/",
+	"/sys/",
+	"/proc/",
+	"/tmp/",
+	"$HOME",
+	"*path*",
+	NULL,
+};
+
 static int handle_option_r(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_b(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_q(Tracee *tracee, const Cli *cli, char *value);
@@ -37,10 +53,10 @@ static int handle_option_V(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_h(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_k(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_0(Tracee *tracee, const Cli *cli, char *value);
-static int handle_option_S(Tracee *tracee, const Cli *cli, char *value);
+static int handle_option_i(Tracee *tracee, const Cli *cli, char *value);
 static int handle_option_R(Tracee *tracee, const Cli *cli, char *value);
-static int handle_option_B(Tracee *tracee, const Cli *cli, char *value);
-static int handle_option_Q(Tracee *tracee, const Cli *cli, char *value);
+static int handle_option_s(Tracee *tracee, const Cli *cli, char *value);
+static int handle_option_S(Tracee *tracee, const Cli *cli, char *value);
 
 static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
 static int post_initialize_command(Tracee *, const Cli *, size_t, char *const *, size_t);
@@ -51,7 +67,7 @@ static Cli proot_cli = {
 	.subtitle = "chroot, mount --bind, and binfmt_misc without privilege/setup",
 	.synopsis = "proot [option] ... [command]",
 	.colophon = "Visit http://proot.me for help, bug reports, suggestions, patchs, ...\n\
-Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
+Copyright (C) 2014 STMicroelectronics, licensed under GPL v2 or later.",
 	.logo = "\
  _____ _____              ___\n\
 |  __ \\  __ \\_____  _____|   |_\n\
@@ -75,7 +91,7 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 \tis used to relocate host files and directories, see the -b\n\
 \toption and the Examples section for details.\n\
 \t\n\
-\tIt is recommended to use the -R option instead.",
+\tIt is recommended to use the -R or -S options instead.",
 	},
 	{ .class = "Regular options",
 	  .arguments = {
@@ -131,7 +147,7 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 		{ .name = NULL, .separator = '\0', .value = NULL } },
 	  .handler = handle_option_v,
 	  .description = "Set the level of debug information to *value*.",
-	  .detail = "\tThe higher the integer value is, the more detailled debug\n\
+	  .detail = "\tThe higher the integer value is, the more detailed debug\n\
 \tinformation is printed to the standard error stream.  A negative\n\
 \tvalue makes PRoot quiet except on fatal errors.",
 	},
@@ -161,7 +177,7 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 		{ .name = "--kernel-release", .separator = '=', .value = "string" },
 		{ .name = NULL, .separator = '\0', .value = NULL } },
 	  .handler = handle_option_k,
-	  .description = "Set the kernel release and compatibility level to *string*.",
+	  .description = "Make current kernel appear as kernel release *string*.",
 	  .detail = "\tIf a program is run on a kernel older than the one expected by its\n\
 \tGNU C library, the following error is reported: \"FATAL: kernel too\n\
 \told\".  To be able to run such programs, PRoot can emulate some of\n\
@@ -174,7 +190,7 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 		{ .name = "--root-id", .separator = '\0', .value = NULL },
 		{ .name = NULL, .separator = '\0', .value = NULL } },
 	  .handler = handle_option_0,
-	  .description = "Force some syscalls to behave as if executed by \"root\".",
+	  .description = "Make current user appear as \"root\" and fake its privileges.",
 	  .detail = "\tSome programs will refuse to work if they are not run with \"root\"\n\
 \tprivileges, even if there is no technical reason for that.  This\n\
 \tis typically the case with package managers.  This option allows\n\
@@ -186,12 +202,24 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 	},
 	{ .class = "Extension options",
 	  .arguments = {
-		{ .name = "-S", .separator = '\0', .value = NULL },
+		{ .name = "-s", .separator = '\0', .value = NULL },
 		{ .name = "--strace", .separator = '\0', .value = NULL },
 		{ .name = NULL, .separator = '\0', .value = NULL } },
-	  .handler = handle_option_S,
+	  .handler = handle_option_s,
 	  .description = "Strace syscals.",
 	  .detail = "\tStrace",
+  },
+	{ .class = "Extension options",
+	  .arguments = {
+		{ .name = "-i", .separator = ' ', .value = "string" },
+		{ .name = "--change-id", .separator = '=', .value = "string" },
+		{ .name = NULL, .separator = '\0', .value = NULL } },
+	  .handler = handle_option_i,
+	  .description = "Make current user and group appear as *string* \"uid:gid\".",
+	  .detail = "\tThis option makes the current user and group appear as uid and\n\
+\tgid.  Likewise, files actually owned by the current user and\n\
+\tgroup appear as if they were owned by uid and gid instead.\n\
+\tNote that the -0 option is the same as -i 0:0.",
 	},
 	{ .class = "Alias options",
 	  .arguments = {
@@ -226,22 +254,25 @@ Copyright (C) 2013 STMicroelectronics, licensed under GPL v2 or later.",
 	},
 	{ .class = "Alias options",
 	  .arguments = {
-		{ .name = "-B", .separator = '\0', .value = NULL },
-		{ .name = "-M", .separator = '\0', .value = NULL },
+		{ .name = "-S", .separator = ' ', .value = "path" },
 		{ .name = NULL, .separator = '\0', .value = NULL } },
-	  .handler = handle_option_B,
-	  .description = "obsolete, use -R instead.",
-	  .detail = "",
+	  .handler = handle_option_S,
+	  .description = "Alias: -0 -r *path* + a couple of recommended -b.",
+	  .detail = "\tThis option is useful to safely create and install packages into\n\
+\tthe guest rootfs.  It is similar to the -R option expect it\n\
+\tenables the -0 option and binds only the following minimal set\n\
+\tof paths to avoid unexpected changes on host files:\n\
+\t\n\
+\t    * /etc/host.conf\n\
+\t    * /etc/hosts\n\
+\t    * /etc/nsswitch.conf\n\
+\t    * /dev/\n\
+\t    * /sys/\n\
+\t    * /proc/\n\
+\t    * /tmp/\n\
+\t    * $HOME",
 	},
-	{ .class = "Alias options",
-	  .arguments = {
-		{ .name = "-Q", .separator = ' ', .value = "command" },
-		{ .name = NULL, .separator = '\0', .value = NULL } },
-	  .handler = handle_option_Q,
-	  .description = "obsolete, use -q and -R instead.",
-	  .detail = "",
-	},
-	{0},
+	END_OF_OPTIONS,
 	},
 };
 

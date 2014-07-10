@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include "tracee/tracee.h"
+#include "attribute.h"
 
 typedef struct {
 	const char *name;
@@ -22,6 +23,13 @@ typedef struct {
 	const char *detail;
 	Argument arguments[5];
 } Option;
+
+#define END_OF_OPTIONS { .class = NULL,								\
+			 .arguments = {{ .name = NULL, .separator = '\0', .value = NULL }},	\
+			 .handler = NULL,							\
+			 .description = NULL,							\
+			 .detail = NULL								\
+			}
 
 typedef int (*initialization_hook_t)(Tracee *tracee, const struct Cli *cli,
 				size_t argc, char *const *argv, size_t cursor);
@@ -45,7 +53,7 @@ typedef struct Cli {
 } Cli;
 
 extern const Cli *get_proot_cli(TALLOC_CTX *context);
-extern const Cli * __attribute__((weak)) get_care_cli(TALLOC_CTX *context);
+extern const Cli * WEAK get_care_cli(TALLOC_CTX *context);
 
 extern void print_usage(Tracee *tracee, const Cli *cli, bool detailed);
 extern void print_version(const Cli *cli);

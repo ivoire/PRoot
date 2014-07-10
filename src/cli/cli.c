@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -20,6 +20,7 @@
  * 02110-1301 USA.
  */
 
+#include <stdio.h>         /* printf(3), */
 #include <stdbool.h>       /* bool, true, false,  */
 #include <linux/limits.h>  /* ARG_MAX, PATH_MAX, */
 #include <string.h>        /* str*(3), basename(3),  */
@@ -29,9 +30,12 @@
 #include <sys/types.h>     /* getpid(2),  */
 #include <unistd.h>        /* getpid(2),  */
 #include <errno.h>         /* errno(3), */
+#include <execinfo.h>      /* backtrace_symbols(3), */
+#include <limits.h>        /* INT_MAX, */
 
 #include "cli/cli.h"
 #include "cli/notice.h"
+#include "extension/care/extract.h"
 #include "extension/extension.h"
 #include "tracee/tracee.h"
 #include "tracee/event.h"
@@ -118,7 +122,7 @@ void print_version(const Cli *cli)
 
 static void print_execve_help(const Tracee *tracee, const char *argv0, int status)
 {
-	notice(tracee, WARNING, SYSTEM, "execve(\"%s\")", argv0);
+	notice(tracee, ERROR, SYSTEM, "execve(\"%s\")", argv0);
 
 	/* Ubuntu kernel bug?  */
 	if (status == -EPERM && getenv("PROOT_NO_SECCOMP") == NULL) {
@@ -153,20 +157,23 @@ static void print_argv(const Tracee *tracee, const char *prompt, char **argv)
 	if (!argv)
 		return;
 
-	void append(const char *post) {
-		ssize_t length = sizeof(string) - (strlen(string) + strlen(post));
-		if (length <= 0)
-			return;
-		strncat(string, post, length);
-	}
+#define APPEND(post)							\
+	do {								\
+		ssize_t length = sizeof(string) - (strlen(string) + strlen(post)); \
+		if (length <= 0)					\
+			return;						\
+		strncat(string, post, length);				\
+	} while (0)
 
-	append(prompt);
-	append(" =");
+	APPEND(prompt);
+	APPEND(" =");
 	for (i = 0; argv[i] != NULL; i++) {
-		append(" ");
-		append(argv[i]);
+		APPEND(" ");
+		APPEND(argv[i]);
 	}
 	string[sizeof(string) - 1] = '\0';
+
+#undef APPEND
 
 	notice(tracee, INFO, USER, "%s", string);
 }
@@ -295,18 +302,27 @@ int parse_config(Tracee *tracee, size_t argc, char *argv[])
 	char *const default_command[] = { "/bin/sh", NULL };
 	option_handler_t handler = NULL;
 	const Option *options;
+	const Cli *cli = NULL;
 	size_t i, j, k;
 	int status;
-	const Cli *cli;
 
-	/* As of now, only the PRoot CLI is supported, the code below
-	 * is just a mock-up.  */
-	if (get_care_cli != NULL && strncasecmp(basename(argv[0]), "care", strlen("care")) == 0)
-		cli = get_care_cli(tracee->ctx);
-	else
-		cli = get_proot_cli(tracee->ctx);
+	if (get_care_cli != NULL) {
+		/* Check if it's an self-extracting CARE archive.  */
+		status = extract_archive_from_file("/proc/self/exe");
+		if (status == 0) {
+			/* Yes it is, nothing more to do.  */
+			exit_failure = 0;
+			return -1;
+		}
+
+		/* Check if it's a valid CARE tool name.  */
+		if (strncasecmp(basename(argv[0]), "care", strlen("care")) == 0)
+			cli = get_care_cli(tracee->ctx);
+	}
+
+	/* Unknown tool name?  Default to PRoot.  */
 	if (cli == NULL)
-		return -1;
+		cli = get_proot_cli(tracee->ctx);
 	tracee->tool_name = cli->name;
 
 	if (argc == 1) {
@@ -479,8 +495,7 @@ error:
 	TALLOC_FREE(tracee);
 
 	if (exit_failure) {
-		fprintf(stderr, "fatal error: see `%1$s --help` or `man %1$s`.\n",
-			basename(argv[0]));
+		fprintf(stderr, "fatal error: see `%s --help`.\n", basename(argv[0]));
 		exit(EXIT_FAILURE);
 	}
 	else
@@ -540,4 +555,37 @@ const char *expand_front_variable(TALLOC_CTX *context, const char *string)
 		return string;
 
 	return expanded;
+}
+
+/* Here follows the support for GCC function instrumentation.  Build
+ * with CFLAGS='-finstrument-functions -O0 -g' and LDFLAGS='-rdynamic'
+ * to enable this mechanism.  */
+
+static int indent_level = 0;
+
+void __cyg_profile_func_enter(void *this_function, void *call_site) DONT_INSTRUMENT;
+void __cyg_profile_func_enter(void *this_function, void *call_site)
+{
+	void *const pointers[] = { this_function, call_site };
+	char **symbols = NULL;
+
+	symbols = backtrace_symbols(pointers, 2);
+	if (symbols == NULL)
+		goto end;
+
+	fprintf(stderr, "%*s from %s\n", (int) strlen(symbols[0]) + indent_level, symbols[0], symbols[1]);
+
+end:
+	if (symbols != NULL)
+		free(symbols);
+
+	if (indent_level < INT_MAX)
+		indent_level++;
+}
+
+void __cyg_profile_func_exit(void *this_function UNUSED, void *call_site UNUSED) DONT_INSTRUMENT;
+void __cyg_profile_func_exit(void *this_function UNUSED, void *call_site UNUSED)
+{
+	if (indent_level > 0)
+		indent_level--;
 }

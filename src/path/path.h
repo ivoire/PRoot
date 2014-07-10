@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -60,6 +60,8 @@ typedef enum {
 	FINAL_SLASH,
 	FINAL_DOT
 } Finality;
+
+#define IS_FINAL(a) ((a) != NOT_FINAL)
 
 /* Comparison between two paths.  */
 typedef enum Comparison {

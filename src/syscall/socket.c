@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -27,6 +27,7 @@
 #include <errno.h>       /* E*, */
 #include <sys/socket.h>  /* struct sockaddr_un, AF_UNIX, */
 #include <sys/un.h>      /* struct sockaddr_un, */
+#include <sys/param.h>   /* MIN(), MAX(), */
 
 #include "syscall/socket.h"
 #include "tracee/tracee.h"
@@ -34,10 +35,12 @@
 #include "path/path.h"
 #include "arch.h"
 
+#include "compat.h"
+
 /* The sockaddr_un structure has exactly the same layout on all
  * architectures.  */
 static const off_t offsetof_path = offsetof(struct sockaddr_un, sun_path);
-static struct sockaddr_un sockaddr_un__;
+extern struct sockaddr_un sockaddr_un__;
 static const size_t sizeof_path  = sizeof(sockaddr_un__.sun_path);
 
 /**
@@ -121,10 +124,6 @@ int translate_socketcall_enter(Tracee *tracee, word_t *address, int size)
 	return 1;
 }
 
-#if !defined(MIN)
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#endif
-
 /**
  * Detranslate the pathname of the struct sockaddr_un currently stored
  * in the @tracee memory at the given @sock_addr.  See the
@@ -143,7 +142,7 @@ int translate_socketcall_exit(Tracee *tracee, word_t sock_addr, word_t size_addr
 	if (sock_addr == 0)
 		return 0;
 
-	size = (int) peek_mem(tracee, size_addr);
+	size = peek_int32(tracee, size_addr);
 	if (errno != 0)
 		return -errno;
 
@@ -175,9 +174,9 @@ int translate_socketcall_exit(Tracee *tracee, word_t sock_addr, word_t size_addr
 	if (is_truncated)
 		size = max_size + 1;
 
-	status = write_data(tracee, size_addr, &size, sizeof(size));
-	if (status < 0)
-		return status;
+	poke_int32(tracee, size_addr, size);
+	if (errno != 0)
+		return -errno;
 
 	return 0;
 }

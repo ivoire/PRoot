@@ -2,7 +2,7 @@
  *
  * This file is part of CARE.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -26,15 +26,17 @@
 #include <sys/queue.h> /* STAILQ_*, */
 #include <stdint.h>    /* INT_MIN, */
 #include <unistd.h>    /* getpid(2), close(2), */
-#include <stdio.h>     /* P_tmpdir, printf(3), fflush(3), */
+#include <stdio.h>     /* printf(3), fflush(3), */
 #include <unistd.h>    /* getcwd(2), */
 #include <errno.h>     /* errno(3), */
 
 #include "cli/cli.h"
 #include "cli/notice.h"
 #include "path/binding.h"
+#include "path/temp.h"
 #include "extension/extension.h"
 #include "extension/care/care.h"
+#include "extension/care/extract.h"
 #include "attribute.h"
 
 /* These should be included last.  */
@@ -91,11 +93,18 @@ static int handle_option_d(Tracee *tracee UNUSED, const Cli *cli, char *value UN
 
 static int handle_option_v(Tracee *tracee, const Cli *cli UNUSED, char *value)
 {
-	return parse_integer_option(tracee, &tracee->verbose, value, "-v");
+	int status;
+
+	status = parse_integer_option(tracee, &tracee->verbose, value, "-v");
+	if (status < 0)
+		return status;
+
+	global_verbose_level = tracee->verbose;
+	return 0;
 }
 
-extern char __attribute__((weak)) _binary_licenses_start;
-extern char __attribute__((weak)) _binary_licenses_end;
+extern char WEAK _binary_licenses_start;
+extern char WEAK _binary_licenses_end;
 
 static int handle_option_V(Tracee *tracee UNUSED, const Cli *cli, char *value UNUSED)
 {
@@ -113,8 +122,15 @@ static int handle_option_V(Tracee *tracee UNUSED, const Cli *cli, char *value UN
 	return -1;
 }
 
-extern char __attribute__((weak)) _binary_manual_start;
-extern char __attribute__((weak)) _binary_manual_end;
+static int handle_option_x(Tracee *tracee UNUSED, const Cli *cli UNUSED, char *value)
+{
+	int status = extract_archive_from_file(value);
+	exit_failure = (status < 0);
+	return -1;
+}
+
+extern char WEAK _binary_manual_start;
+extern char WEAK _binary_manual_end;
 
 static int handle_option_h(Tracee *tracee UNUSED, const Cli *cli UNUSED, char *value UNUSED)
 {
@@ -131,32 +147,6 @@ static int handle_option_h(Tracee *tracee UNUSED, const Cli *cli UNUSED, char *v
 }
 
 /**
- * Delete this temporary directory.  Note: this is a Talloc
- * desctructor.
- */
-static int remove_temp(char *path)
-{
-	char *command;
-
-	/* Sanity checks.  */
-	assert(strncmp(P_tmpdir, path, strlen(P_tmpdir)) == 0);
-	assert(path[0] == '/');
-
-	command = talloc_asprintf(NULL, "rm -rf %s 2>/dev/null", path);
-	if (command != NULL) {
-		int status;
-
-		status = system(command);
-		if (status != 0)
-			notice(NULL, INFO, USER, "can't delete '%s'", path);
-	}
-
-	TALLOC_FREE(command);
-
-	return 0;
-}
-
-/**
  * Allocate a new binding for the given @tracee that will conceal the
  * content of @path with an empty file or directory.  This function
  * complains about missing @host path only if @must_exist is true.
@@ -165,8 +155,8 @@ static Binding *new_concealing_binding(Tracee *tracee, const char *path, bool mu
 {
 	struct stat statl;
 	Binding *binding;
+	const char *temp;
 	int status;
-	char *temp;
 
 	status = stat(path, &statl);
 	if (status < 0) {
@@ -175,35 +165,18 @@ static Binding *new_concealing_binding(Tracee *tracee, const char *path, bool mu
 		return NULL;
 	}
 
-	temp = talloc_asprintf(tracee, "%s/care-%d-XXXXXX", P_tmpdir, getpid());
+	if (S_ISDIR(statl.st_mode))
+		temp = create_temp_directory(NULL, tracee->tool_name);
+	else
+		temp = create_temp_file(NULL, tracee->tool_name);
 	if (temp == NULL) {
-		notice(tracee, WARNING, INTERNAL, "can't conceal %s: not enough memory", path);
-		return NULL;
-	}
-
-	/* Create the empty file or directory.  */
-	if (S_ISDIR(statl.st_mode)) {
-		if (mkdtemp(temp) == NULL)
-			status = -errno;
-	}
-	else {
-		status = mkstemp(temp);
-		if (status >= 0)
-			close(status);
-	}
-	if (status < 0) {
-		notice(tracee, WARNING, SYSTEM, "can't conceal %s", path);
+		notice(tracee, WARNING, INTERNAL, "can't conceal %s", path);
 		return NULL;
 	}
 
 	binding = new_binding(tracee, temp, path, must_exist);
 	if (binding == NULL)
 		return NULL;
-
-	/* Make sure the temporary directory will be removed at the
-	 * end of the execution.  */
-	talloc_reparent(tracee, binding, temp);
-	talloc_set_destructor(temp, remove_temp);
 
 	return binding;
 }
@@ -385,6 +358,8 @@ static int post_initialize_bindings(Tracee *tracee, const Cli *cli,
 const Cli *get_care_cli(TALLOC_CTX *context)
 {
 	Options *options;
+
+	global_tool_name = care_cli.name;
 
 	options = talloc_zero(context, Options);
 	if (options == NULL)

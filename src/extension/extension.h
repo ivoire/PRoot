@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -92,7 +92,7 @@ typedef enum {
 	INHERIT_PARENT,
 
 	/* Control the inheritance: "(Extension *) data1" is the
-	 * extension of the parent and "(bool) data2" is the clone(2)
+	 * extension of the parent and "(word_t) data2" is the clone(2)
 	 * flags (CLONE_RECONF for sub-reconfiguration).  For instance
 	 * the extension for the child could use a configuration
 	 * different from the parent's configuration.  */

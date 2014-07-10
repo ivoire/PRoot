@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -32,7 +32,10 @@
 typedef struct {
 	struct archive *handle;
 	struct archive_entry_linkresolver *hardlink_resolver;
-	const char *howto_extract;
+
+	/* Information used to create an self-extracting archive.  */
+	off_t offset;
+	int fd;
 } Archive;
 
 extern Archive *new_archive(TALLOC_CTX *context, const Tracee* tracee,

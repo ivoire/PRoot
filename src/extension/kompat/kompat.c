@@ -2,7 +2,7 @@
  *
  * This file is part of PRoot.
  *
- * Copyright (C) 2013 STMicroelectronics
+ * Copyright (C) 2014 STMicroelectronics
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -41,6 +41,7 @@
 #include "tracee/reg.h"
 #include "tracee/abi.h"
 #include "tracee/mem.h"
+#include "execve/auxv.h"
 #include "cli/notice.h"
 #include "arch.h"
 
@@ -57,6 +58,8 @@ typedef struct {
 		int offset;     /* offset to be applied.  */
 	} shifts[MAX_ARG_SHIFT];
 } Modif;
+
+#define NONE {{0, 0, 0}}
 
 typedef struct {
 	const char *release;
@@ -162,7 +165,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,28),
 			.new_sysarg_num   = PR_accept,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 		modify_syscall(tracee, config, &modif);
 		return 0;
@@ -172,7 +175,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,27),
 			.new_sysarg_num   = PR_dup2,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 
 		/* "If oldfd equals newfd, then dup3() fails with the
@@ -189,7 +192,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,27),
 			.new_sysarg_num   = PR_epoll_create,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 
 		/* "the size argument is ignored, but must be greater
@@ -204,7 +207,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,19),
 			.new_sysarg_num   = PR_epoll_wait,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 		modify_syscall(tracee, config, &modif);
 		return 0;
@@ -216,7 +219,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,27),
 			.new_sysarg_num   = PR_eventfd,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 
 		modified = modify_syscall(tracee, config, &modif);
@@ -362,7 +365,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,27),
 			.new_sysarg_num   = PR_inotify_init,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 		modify_syscall(tracee, config, &modif);
 		return 0;
@@ -445,7 +448,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,27),
 			.new_sysarg_num   = PR_pipe,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 		modify_syscall(tracee, config, &modif);
 		return 0;
@@ -454,7 +457,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	case PR_pselect6: {
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,16),
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 #if defined(ARCH_X86_64)
 		modif.new_sysarg_num = (get_abi(tracee) != ABI_2 ? PR_select : PR__newselect);
@@ -503,7 +506,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		Modif modif = {
 			.expected_release = KERNEL_VERSION(2,6,27),
 			.new_sysarg_num   = PR_signalfd,
-			.shifts		  = {{0}}
+			.shifts		  = NONE
 		};
 
 		/* "In Linux up to version 2.6.26, the flags argument
@@ -570,98 +573,81 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
  */
 static void adjust_elf_auxv(Tracee *tracee, Config *config)
 {
+	ElfAuxVector *vectors;
+	ElfAuxVector *vector;
+	word_t vectors_address;
 	word_t stack_pointer;
-	word_t pointer;
-	word_t data;
-
-	void *buffer;
-	size_t length;
+	void *argv_envp;
 	size_t size;
 	int status;
-	size_t i;
 
-	/* Right after execve, the stack layout is:
-	 *
-	 *     argc, argv[0], ..., 0, envp[0], ..., 0, auxv[0], 0, 0
-	 */
-	stack_pointer = pointer = peek_reg(tracee, CURRENT, STACK_POINTER);
-
-	/* Read: argc */
-	data = peek_mem(tracee, pointer);
-	if (errno != 0)
+	vectors_address = get_elf_aux_vectors_address(tracee);
+	if (vectors_address == 0)
 		return;
 
-	/* Skip: argc, argv, 0 */
-	i = 1 + data + 1;
-	pointer += i * sizeof_word(tracee);
+	vectors = fetch_elf_aux_vectors(tracee, vectors_address);
+	if (vectors == NULL)
+		return;
 
-	/* Skip: envp, 0 */
-	do {
-		data = peek_mem(tracee, pointer);
-		if (errno != 0)
-			return;
-		pointer += sizeof_word(tracee);
-	} while (data != 0);
+	/* Discard AT_SYSINFO* vectors: they can be used to get the OS
+	 * release number from memory instead of from the uname
+	 * syscall, and only this latter is currently hooked by
+	 * PRoot.  */
+	vector = find_elf_aux_vector(vectors, AT_SYSINFO_EHDR);
+	if (vector != NULL) {
+		vector->type  = AT_IGNORE;
+		vector->value = 0;
+	}
 
-	/* Read: auxv[] */
-	do {
-		data = peek_mem(tracee, pointer);
-		if (errno != 0)
-			return;
-
-		/* Discard AT_SYSINFO* vector: it can be used to get
-		 * the OS release number from memory instead of from
-		 * the uname syscall, and only this latter is
-		 * currently hooked by PRoot.  */
-		if (data == AT_SYSINFO_EHDR || data == AT_SYSINFO)
-			poke_mem(tracee, pointer, AT_IGNORE);
-
-		pointer += 2 * sizeof_word(tracee);
-	} while (data != 0);
+	vector = find_elf_aux_vector(vectors, AT_SYSINFO);
+	if (vector != NULL) {
+		vector->type  = AT_IGNORE;
+		vector->value = 0;
+	}
 
 	/* Add the AT_RANDOM vector only if needed.  */
 	if (!needs_kompat(config, KERNEL_VERSION(2,6,29)))
-		return;
+		goto end;
 
-	/* Allocate enough room for the whole "argv, envp, auxv" stuff
-	 * plus a new auxiliary vector.  */
-	size = pointer - stack_pointer + 2 * sizeof_word(tracee);
-	buffer = talloc_size(tracee->ctx, size);
-	if (buffer == NULL)
-		return;
+	vector = find_elf_aux_vector(vectors, AT_RANDOM);
+	if (vector != NULL && config->actual_release != 0)
+		goto end;
 
-	/* Slurp the whole "argv, envp, auxv" stuff at once.  */
-	status = read_data(tracee, buffer, stack_pointer, size - 2 * sizeof_word(tracee));
+	status = add_elf_aux_vector(&vectors, AT_RANDOM, vectors_address);
 	if (status < 0)
 		return;
 
-	/* Insert the new auxiliary vector at the end.  */
-	length = size / sizeof_word(tracee);
-	if (length < 4) /* Sanity check.  */
-		return;
+	/* Since a new vector needs to be added, the ELF auxiliary
+	 * vectors array can't be pushed in place.  As a consequence,
+	 * argv[] and envp[] arrays are moved one vector downward to
+	 * make room for the new ELF auxiliary vectors array.
+	 * Remember, the stack layout is as follow right after execve:
+	 *
+	 *     argv[], envp[], auxv[]
+	 */
+	stack_pointer = peek_reg(tracee, CURRENT, STACK_POINTER);
+	size = vectors_address - stack_pointer;
+	argv_envp = talloc_size(tracee->ctx, size);
+	if (argv_envp == NULL)
+		goto end;
 
-	if (is_32on64_mode(tracee)) {
-		((uint32_t *) buffer)[length - 4] = AT_RANDOM;
-		((uint32_t *) buffer)[length - 3] = stack_pointer;
-		((uint32_t *) buffer)[length - 2] = AT_NULL;
-		((uint32_t *) buffer)[length - 1] = 0;
-	}
-	else {
-		((word_t *) buffer)[length - 4] = AT_RANDOM;
-		((word_t *) buffer)[length - 3] = stack_pointer;
-		((word_t *) buffer)[length - 2] = AT_NULL;
-		((word_t *) buffer)[length - 1] = 0;
-	}
-
-	/* Overwrite the whole "argv, envp, auxv" stuff.  */
-	pointer = stack_pointer - 2 * sizeof_word(tracee);
-	status = write_data(tracee, pointer, buffer, size);
+	status = read_data(tracee, argv_envp, stack_pointer, size);
 	if (status < 0)
-		return;
+		goto end;
 
-	/* Update the stack pointer.  */
-	poke_reg(tracee, STACK_POINTER, pointer);
+	stack_pointer -= 2 * sizeof_word(tracee);
 
+	status = write_data(tracee, stack_pointer, argv_envp, size);
+	if (status < 0)
+		goto end;
+
+	/* The content of argv[] and env[] is now copied to its new
+	 * location; the stack pointer can be safely updated.  */
+	poke_reg(tracee, STACK_POINTER, stack_pointer);
+
+	vectors_address -= 2 * sizeof_word(tracee);
+end:
+	push_elf_aux_vectors(tracee, vectors, vectors_address);
 	return;
 }
 
@@ -684,7 +670,7 @@ static void emulate_fd_flags(Tracee *tracee, word_t fd, Reg sysarg, int emulated
 	if ((emulated_flags & flags & O_NONBLOCK) != 0)
 		register_chained_syscall(tracee, PR_fcntl, fd, F_SETFL, O_NONBLOCK, 0, 0, 0);
 
-	tracee->chain.final_result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+	force_chain_final_result(tracee, peek_reg(tracee, CURRENT, SYSARG_RESULT));
 }
 
 /**
@@ -767,7 +753,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 			return 0;
 
 		register_chained_syscall(tracee, PR_fcntl, result, F_SETFD, FD_CLOEXEC, 0, 0, 0);
-		tracee->chain.final_result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+		force_chain_final_result(tracee, peek_reg(tracee, CURRENT, SYSARG_RESULT));
 		return 0;
 	}
 
