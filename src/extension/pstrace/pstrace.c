@@ -520,9 +520,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	case PR_getegid:
+	case PR_getegid32:
 	case PR_geteuid:
+	case PR_geteuid32:
 	case PR_getgid:
+	case PR_getgid32:
 	case PR_getpid:
+	case PR_getppid:
 	case PR_gettid:
 	case PR_getuid:
 	case PR_mknod: {
