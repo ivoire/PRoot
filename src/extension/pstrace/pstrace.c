@@ -20,10 +20,12 @@
  * 02110-1301 USA.
  */
 
+#include <asm/prctl.h>
 #include <assert.h>  /* assert(3), */
 #include <ctype.h>  /* isprint(3) */
 #include <stdint.h>  /* intptr_t, */
 #include <errno.h>   /* E*, */
+#include <sys/prctl.h>
 #include <sys/stat.h>   /* chmod(2), stat(2) */
 #include <sys/types.h>  /* uid_t, gid_t */
 #include <sys/utsname.h>  /* utsname */
@@ -128,6 +130,26 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	config->syscall_began = true;
 
 	switch (sysnum) {
+  case PR_arch_prctl: {
+    int code = peek_reg(tracee, CURRENT, SYSARG_1);
+      if (code == ARCH_SET_FS || code == ARCH_SET_GS) {
+        word_t addr = peek_reg(tracee, CURRENT, SYSARG_2);
+        unsigned long data;
+        read_data(tracee, &data, addr, sizeof(data));
+
+        if (code == ARCH_SET_FS)
+          PRINT("ARCH_SET_FS, 0x%x", (void*)data);
+        else
+          PRINT("ARCH_SET_GS, 0x%x", (void*)data);
+      } else {
+        if (code == ARCH_GET_FS)
+          PRINT("ARCH_GET_FS, ??");
+        else
+          PRINT("ARCH_GET_GS, ??");
+    }
+    break;
+  }
+
 	case PR_access: {
 		get_sysarg_path(tracee, path, SYSARG_1);
 		int mode = peek_reg(tracee, CURRENT, SYSARG_2);
