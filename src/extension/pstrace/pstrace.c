@@ -71,96 +71,7 @@ typedef struct {
 } Config;
 
 /* List of syscalls handled by this extensions.  */
-static FilteredSysnum filtered_sysnums[] = {
-	{ PR_access,		FILTER_SYSEXIT },
-	{ PR_brk,		FILTER_SYSEXIT },
-	{ PR_capset,		FILTER_SYSEXIT },
-	{ PR_chmod,		FILTER_SYSEXIT },
-	{ PR_chown,		FILTER_SYSEXIT },
-	{ PR_chown32,		FILTER_SYSEXIT },
-	{ PR_chroot,		FILTER_SYSEXIT },
-	{ PR_close,		FILTER_SYSEXIT },
-	{ PR_connect,		FILTER_SYSEXIT },
-	{ PR_dup,		FILTER_SYSEXIT },
-	{ PR_dup2,		FILTER_SYSEXIT },
-	{ PR_dup3,		FILTER_SYSEXIT },
-	{ PR_execve,		FILTER_SYSEXIT },
-	{ PR_exit,		FILTER_SYSEXIT },
-	{ PR_exit_group,		FILTER_SYSEXIT },
-	{ PR_fchmod,		FILTER_SYSEXIT },
-	{ PR_fchmodat,		FILTER_SYSEXIT },
-	{ PR_fchown,		FILTER_SYSEXIT },
-	{ PR_fchown32,		FILTER_SYSEXIT },
-	{ PR_fchownat,		FILTER_SYSEXIT },
-	{ PR_fchownat,		FILTER_SYSEXIT },
-	{ PR_fstat,		FILTER_SYSEXIT },
-	{ PR_fstat,		FILTER_SYSEXIT },
-	{ PR_fstat64,		FILTER_SYSEXIT },
-	{ PR_fstatat64,		FILTER_SYSEXIT },
-	{ PR_fstatfs,		FILTER_SYSEXIT },
-	{ PR_fstatfs64,		FILTER_SYSEXIT },
-	{ PR_ftruncate,		FILTER_SYSEXIT },
-	{ PR_getegid,		FILTER_SYSEXIT },
-	{ PR_getegid32,		FILTER_SYSEXIT },
-	{ PR_geteuid,		FILTER_SYSEXIT },
-	{ PR_geteuid32,		FILTER_SYSEXIT },
-	{ PR_getgid,		FILTER_SYSEXIT },
-	{ PR_getgid32,		FILTER_SYSEXIT },
-	{ PR_getresgid,		FILTER_SYSEXIT },
-	{ PR_getresgid32,	FILTER_SYSEXIT },
-	{ PR_getresuid,		FILTER_SYSEXIT },
-	{ PR_getresuid32,	FILTER_SYSEXIT },
-	{ PR_getsockopt,	FILTER_SYSEXIT },
-	{ PR_getuid,		FILTER_SYSEXIT },
-	{ PR_getuid32,		FILTER_SYSEXIT },
-	{ PR_lchown,		FILTER_SYSEXIT },
-	{ PR_lchown32,		FILTER_SYSEXIT },
-	{ PR_lseek,		FILTER_SYSEXIT },
-	{ PR_lstat,		FILTER_SYSEXIT },
-	{ PR_lstat64,		FILTER_SYSEXIT },
-	{ PR_mkdir,		FILTER_SYSEXIT },
-	{ PR_mknod,		FILTER_SYSEXIT },
-	{ PR_mmap,		FILTER_SYSEXIT },
-	{ PR_mprotect,		FILTER_SYSEXIT },
-	{ PR_munmap,		FILTER_SYSEXIT },
-	{ PR_nanosleep,	FILTER_SYSEXIT },
-	{ PR_newfstatat,	FILTER_SYSEXIT },
-	{ PR_oldfstat,		FILTER_SYSEXIT },
-	{ PR_oldlstat,		FILTER_SYSEXIT },
-	{ PR_oldstat,		FILTER_SYSEXIT },
-	{ PR_open,		FILTER_SYSEXIT },
-	{ PR_openat,		FILTER_SYSEXIT },
-	{ PR_read,		FILTER_SYSEXIT },
-	{ PR_setfsgid,		FILTER_SYSEXIT },
-	{ PR_setfsgid32,	FILTER_SYSEXIT },
-	{ PR_setfsuid,		FILTER_SYSEXIT },
-	{ PR_setfsuid32,	FILTER_SYSEXIT },
-	{ PR_setgid,		FILTER_SYSEXIT },
-	{ PR_setgid32,		FILTER_SYSEXIT },
-	{ PR_setgroups,		FILTER_SYSEXIT },
-	{ PR_setgroups32,	FILTER_SYSEXIT },
-	{ PR_setregid,		FILTER_SYSEXIT },
-	{ PR_setregid32,	FILTER_SYSEXIT },
-	{ PR_setreuid,		FILTER_SYSEXIT },
-	{ PR_setreuid32,	FILTER_SYSEXIT },
-	{ PR_setresgid,		FILTER_SYSEXIT },
-	{ PR_setresgid32,	FILTER_SYSEXIT },
-	{ PR_setresuid,		FILTER_SYSEXIT },
-	{ PR_setresuid32,	FILTER_SYSEXIT },
-	{ PR_setuid,		FILTER_SYSEXIT },
-	{ PR_setuid32,		FILTER_SYSEXIT },
-	{ PR_setxattr,		FILTER_SYSEXIT },
-	{ PR_stat,		FILTER_SYSEXIT },
-	{ PR_stat64,		FILTER_SYSEXIT },
-	{ PR_statfs,		FILTER_SYSEXIT },
-	{ PR_statfs64,		FILTER_SYSEXIT },
-	{ PR_truncate,		FILTER_SYSEXIT },
-	{ PR_umask,		FILTER_SYSEXIT },
-	{ PR_uname,		FILTER_SYSEXIT },
-	{ PR_unlink,		FILTER_SYSEXIT },
-	{ PR_write,		FILTER_SYSEXIT },
-	FILTERED_SYSNUM_END,
-};
+static FilteredSysnum *filtered_sysnums = NULL;
 
 
 static void pstrace_print(Tracee *tracee, Config *config, const char *psz_fmt, ...)
@@ -540,6 +451,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 	}
 
 	config->last_pid = tracee->pid;
+
+	/* Disable seccomp acceleration for this tracee and
+	 * all its children since we can't assume what are the
+	 * syscalls its tracer is interested with.  */
+	if (tracee->seccomp == ENABLED)
+		tracee->seccomp = DISABLING;
+
 	return 0;
 }
 
@@ -705,6 +623,13 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	printf("\n");
 	config->last_pid = tracee->pid;
 	config->syscall_began = false;
+
+	/* Disable seccomp acceleration for this tracee and
+	 * all its children since we can't assume what are the
+	 * syscalls its tracer is interested with.  */
+	if (tracee->seccomp == ENABLED)
+		tracee->seccomp = DISABLING;
+
 	return 0;
 }
 
