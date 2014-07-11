@@ -163,6 +163,25 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+  case PR_faccessat: {
+    char psz_mode[19]= "";
+		int dirfd = peek_reg(tracee, CURRENT, SYSARG_1);
+
+		get_sysarg_path(tracee, path, SYSARG_2);
+
+		int mode = peek_reg(tracee, CURRENT, SYSARG_3);
+		if (mode == F_OK)
+			sprintf(psz_mode, "F_OK");
+		else
+			ors2string(access_flags, mode, psz_mode);
+
+		if(dirfd == AT_FDCWD)
+			PRINT("AT_FDCWD, \"%s\", %s, ??", path, psz_mode);
+		else
+			PRINT("%d, \"%s\", %s, ??", dirfd, path, psz_mode);
+    break;
+  }
+
 	case PR_brk: {
 		void *addr = (void*) peek_reg(tracee, CURRENT, SYSARG_1);
 		if (addr == NULL)
@@ -459,6 +478,7 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+  case PR_getpgrp:
 	case PR_getegid:
 	case PR_getegid32:
 	case PR_geteuid:
