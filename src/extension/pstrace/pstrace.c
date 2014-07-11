@@ -384,6 +384,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+  case PR_setpgid: {
+    pid_t pid = peek_reg(tracee, CURRENT, SYSARG_1);
+    pid_t pgid = peek_reg(tracee, CURRENT, SYSARG_2);
+    PRINT("%d, %d", pid, pgid);
+    break;
+  }
+
 	case PR_lstat:
 	case PR_lstat64:
 	case PR_oldlstat:
