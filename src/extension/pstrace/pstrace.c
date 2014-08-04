@@ -282,6 +282,13 @@ static int handle_sysenter_end(Tracee *tracee, Config *config)
 		break;
 	}
 
+  case PR_getcwd: {
+    void * buf = (void*) peek_reg(tracee, CURRENT, SYSARG_1);
+    size_t size = peek_reg(tracee, CURRENT, SYSARG_2);
+    PRINT("" BEGIN_INOUT "%p" END_INOUT ", %zu", buf, size);
+    break;
+  }
+
 	case PR_newfstatat:
 	case PR_fstatat64: {
 		GET_FD(1);
@@ -563,13 +570,18 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	/* Print return data only if it was a success*/
 	if (result >= 0) {
 		switch (sysnum) {
+    case PR_getcwd: {
+      get_sysarg_path(tracee, path, SYSARG_1);
+      printf("\t=> %s", path);
+      break;
+    }
 		case PR_read: {
 			int i;
 			/* Nothing to print here */
 			if (result <= 0)
 				break;
 
-			/* Do ot print all the buffer */
+			/* Do not print all the buffer */
 			result = MIN(result, 42);
 			/* Get the data and print printable caracters */
 			word_t buf_addr = peek_reg(tracee, CURRENT, SYSARG_2);
